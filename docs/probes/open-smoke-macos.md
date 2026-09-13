@@ -54,27 +54,32 @@ binaries itself).
 
 ## Linux/NixOS run (pending, user-attested)
 
-Minimal protocol with fixed benign URLs — the browser shows the URL
-itself (address bar carries the query and fragment), so success is the
-user observing the exact URL open; visible failure is any brouter error
-or refusal text. Run from the repo root on the target.
+Minimal protocol with fixed benign URLs. Order matters: fully quit
+Brave BEFORE the cold command; the cold command itself launches Brave,
+so afterwards leave it open — the warm command runs with no quit in
+between. `spike.example` intentionally does not serve pages: success
+means the URL reaches the selected browser (exact URL visible in the
+address bar, query and fragment intact), NOT that the page loads.
 
-One-time setup:
+Run from the repo root on branch `task-0011-browser-launch` (contains
+the reviewed d5493f6 content).
+
+One-time setup — creates the config before any use:
 
 ```sh
 printf 'default = "brave"\n\n[browsers.brave]\nbrowser = "brave"\n' \
   > /tmp/brouter-smoke.toml
 ```
 
-Cold run (Brave not running):
+Cold run — first fully quit Brave (verify: `pgrep -a brave` prints
+nothing), then:
 
 ```sh
 nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
   'https://spike.example/direct-cold?case=1#cold'
 ```
 
-Then quit Brave via the UI and run the warm case (Brave already
-running):
+Warm run — immediately after (Brave is now open; do NOT quit it):
 
 ```sh
 nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
@@ -82,8 +87,8 @@ nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
 ```
 
 Record for each run: cold or warm, success (the exact URL appeared in
-the browser) or the visible failure text. Expected: direct launch of
-the stable Brave executable (`/run/current-system/sw/bin/brave` per
-TASK-0007), warm run reusing the running instance; query and fragment
-preserved in the address bar. Do not reuse TASK-0007 probe receipts —
-this is direct-launch evidence.
+the browser address bar — the page itself will not load; that is
+expected) or the visible failure text. Expected: direct launch of the
+stable Brave executable (`/run/current-system/sw/bin/brave` per
+TASK-0007), warm run reusing the running instance. Do not reuse
+TASK-0007 probe receipts — this is direct-launch evidence.
