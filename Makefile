@@ -2,13 +2,18 @@
 # `make check`; TASK-0005 adds separate format/static-analysis/race/
 # coverage/security/architecture commands. Do not expand these targets.
 
-.PHONY: check build test lint hooks-install hooks-check hooks-uninstall fmt-check fmt-fix vet analyze race coverage security architecture
+.PHONY: check build test lint hooks-install hooks-check hooks-uninstall fmt-check fmt-fix vet analyze race coverage security architecture macos-handler
 
 # The one normal lint/type-and-test gate.
 # Contract: success prints exactly "true"; failure prints "false", bounded
 # diagnostics, and exits nonzero. Full log: .tmp/check.log
 check:
 	@sh scripts/check.sh
+
+# Build the macOS URL handler bundle (dist/BrouterHandler.app). Darwin
+# only; see docs/macos-handler.md for install and restoration steps.
+macos-handler:
+	@bash scripts/build-macos-handler.sh
 
 build:
 	@go build ./...

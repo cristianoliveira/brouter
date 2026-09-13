@@ -2,6 +2,9 @@
 /brouter
 /cmd/brouter/brouter
 
+# macOS handler bundle build output
+dist/
+
 # Go test and coverage artifacts
 *.test
 *.out
