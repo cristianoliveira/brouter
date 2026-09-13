@@ -1,0 +1,17 @@
+# Build output
+/brouter
+/cmd/brouter/brouter
+
+# Go test and coverage artifacts
+*.test
+*.out
+coverage/
+*.prof
+
+# Local agent reports and scratch space
+/.tmp/
+
+# Editors
+.idea/
+.vscode/
+*.swp
