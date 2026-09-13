@@ -229,20 +229,24 @@ func TestContractSubcommandHelpAfterPositionalIsUsageError(t *testing.T) {
 func TestContractLegacyFlagErrorWording(t *testing.T) {
 	// Given the pre-migration std-flag parser emitted specific error
 	// lines plus a per-command usage block, when flag misuse happens,
-	// the same lines appear on stderr with the usage exit code.
+	// stderr is byte-identical to the legacy output.
+	const usageBlock = "Usage of validate:\n  -config string\n    \tpath to config.toml (default: per-OS config location)\n"
+
 	cases := []struct {
-		name string
-		args []string
-		want []string
+		name    string
+		args    []string
+		wantErr string
 	}{
 		{"unknown long flag", []string{"validate", "--bogus"},
-			[]string{"flag provided but not defined: -bogus", "Usage of validate:"}},
+			"flag provided but not defined: -bogus\n" + usageBlock},
 		{"unknown shorthand cluster", []string{"validate", "-bogus"},
-			[]string{"flag provided but not defined: -b", "Usage of validate:"}},
+			"flag provided but not defined: -bogus\n" + usageBlock},
 		{"missing flag value", []string{"validate", "-config"},
-			[]string{"flag needs an argument: -config", "Usage of validate:"}},
+			"flag needs an argument: -config\n" + usageBlock},
+		{"unknown flag before help", []string{"validate", "-bogus", "-h"},
+			"flag provided but not defined: -bogus\n" + usageBlock},
 		{"root unknown flag", []string{"-bogus"},
-			[]string{`unknown command "-bogus"`, "brouter help"}},
+			"brouter: unknown command \"-bogus\"\nRun 'brouter help' for usage.\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -253,10 +257,8 @@ func TestContractLegacyFlagErrorWording(t *testing.T) {
 			if stdout != "" {
 				t.Errorf("stdout = %q, want empty", stdout)
 			}
-			for _, want := range tc.want {
-				if !strings.Contains(stderr, want) {
-					t.Errorf("stderr = %q, want it to contain %q", stderr, want)
-				}
+			if stderr != tc.wantErr {
+				t.Errorf("stderr = %q, want %q", stderr, tc.wantErr)
 			}
 		})
 	}

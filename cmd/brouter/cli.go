@@ -268,7 +268,10 @@ func leadingHelpFlag(args []string) bool {
 		case strings.HasPrefix(arg, "-config="), strings.HasPrefix(arg, "--config="):
 			// inline value, nothing to skip
 		case strings.HasPrefix(arg, "-"):
-			// other flags: unknown ones are rejected later by pflag
+			// An unknown flag errors before any later -h would be reached
+			// (std flag parsed left to right): stop intercepting so pflag
+			// produces the error and run() re-emits the legacy wording.
+			return false
 		default:
 			return false // positional reached; a later -h is positional
 		}
