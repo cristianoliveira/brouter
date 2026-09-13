@@ -1,8 +1,8 @@
 # Probe: NixOS + Sway URL delivery — TASK-0007
 
-Status: **executed on target; acceptance evidence complete.**
+Status: **target observations reported; independent QA and provenance review pending.**
 
-Run date: 2026-09-13.
+Run date: 2026-09-13. The observations below are run notes supplied for review, not independently verified by this PR. TASK-0007 remains doing until the committed probe passes safety QA and the target-session evidence is attributable.
 
 ## Target
 
@@ -86,15 +86,15 @@ Mako's notification D-Bus API is available. A direct `org.freedesktop.Notificati
 
 | Acceptance item | Result |
 |---|---|
-| Temporary HTTP/HTTPS registration | Pass: isolated desktop registration |
-| OS-delivered receipt | Pass: two receipts from real Sway session |
-| Actual opener and portal path | Pass: `xdg-open` direct; active portals not used |
-| Graphical-session browser resolution | Pass: stable profile path and immutable store path recorded |
-| Brave forwarding, cold and warm | Pass: exact targets reached local HTTP receiver |
-| Sequential URL delivery | Pass: probe 1 and probe 2 recorded |
-| Profile selection | Partial: only `Default` exists |
-| Observable failure channel | Pass: Mako recorded notification; unavailable D-Bus failed on stderr |
-| Preserve existing defaults | Pass: defaults unchanged; no restoration required |
+| Temporary HTTP/HTTPS registration | Reported; QA/provenance pending |
+| OS-delivered receipt | Reported; QA/provenance pending |
+| Actual opener and portal path | Reported; QA/provenance pending |
+| Graphical-session browser resolution | Reported; QA/provenance pending |
+| Brave forwarding, cold and warm | Reported; QA/provenance pending |
+| Sequential URL delivery | Reported; QA/provenance pending |
+| Profile selection | Reported partial; QA/provenance pending |
+| Observable failure channel | Reported; QA/provenance pending |
+| Preserve existing defaults | Reported; QA/provenance pending |
 
 ## Cleanup
 
