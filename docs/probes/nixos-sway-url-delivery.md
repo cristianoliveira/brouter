@@ -18,8 +18,13 @@ is filled with observed output from the target machine.
 ## Tool
 
 `scripts/probes/nixos-url-spike.sh` — POSIX shell, self-contained.
-Everything it changes is recorded in a backup and restorable with one
-command. It refuses to run outside Linux or outside a graphical session.
+Strict session gate: requires `WAYLAND_DISPLAY` plus `SWAYSOCK` (or a
+successful `swaymsg` check) — X11 sessions and other compositors are
+refused. Every state change is recorded and reversible; an existing
+handler with the spike's ID blocks installation (a copy is saved, the
+file is never overwritten); opener failures are preserved in the exit
+status; and a mimeapps.list that did not exist before the spike is
+removed again at restore rather than left behind.
 
 ## Procedure
 
