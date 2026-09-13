@@ -1,5 +1,40 @@
 # Development
 
+## Policy → command → enforcement
+
+Every process rule maps to a command and an enforcement point. Nothing is
+prose-only.
+
+| Policy | Command | Enforcement |
+|---|---|---|
+| One normal gate: lint + type checks + deterministic tests | `make check` | Shell script; hooks, watcher, and CI call the same command (wired in TASK-0004) |
+| Deterministic formatting via gofmt | `gofmt -l ./...` (check), `gofmt -w` (fix) | Separate command; release enforcement in TASK-0005 |
+| Static analysis beyond the pinned lint rules | `go vet ./...` | Separate command; TASK-0005 |
+| Race/coverage/security/architecture budgets | TASK-0005 targets | Separate commands; release enforcement |
+| Conventional commits referencing task IDs | developer discipline + commit-msg hook | Hook enforcement in TASK-0004 |
+
+## Failure modes → recovery
+
+| Failure mode | Recovery |
+|---|---|
+| `go` missing from PATH | Install from <https://go.dev/dl/> or run `nix develop` |
+| `golangci-lint` missing | Run `nix develop` (pinned 2.13.2; never install floating versions) |
+| Gate prints `false`, exit nonzero | Read `.tmp/check.log` (full output); fix the first failing step; rerun `make check` |
+| `go: requires go >= X` | Local toolchain older than `go.mod`; update the local toolchain or bump the locked dev shell deliberately |
+| Gate blocked mid-run | Rerun `make check`; the log is recreated fresh each run |
+
+## DO NOT
+
+- Do not add checks to the normal gate (formatting, vet, race, coverage,
+  security, architecture stay separate; TASK-0005 owns them).
+- Do not create competing gates or parallel quality commands.
+- Do not bypass the gate (no `--no-verify` style escapes without an
+  explicit, recorded decision).
+- Do not auto-download tools or toolchains; missing tools fail with
+  guidance.
+- Do not use destructive git operations (rebase/reset/amend on shared
+  branches) unless explicitly requested.
+
 ## Setup
 
 The pinned toolchain comes from the Nix flake; `flake.lock` pins the exact
