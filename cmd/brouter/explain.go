@@ -23,7 +23,7 @@ func runExplain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	rawURL, ok := explainInput(fs.Args(), stdin, stderr)
+	rawURL, ok := singleInput("explain", fs.Args(), stdin, stderr)
 	if !ok {
 		return exitUsage
 	}
@@ -54,12 +54,12 @@ func runExplain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return exitSuccess
 }
 
-// explainInput takes the URL from the positional argument or, when the
-// argument is missing, from one line of stdin. Empty input is a usage
-// error.
-func explainInput(args []string, stdin io.Reader, stderr io.Writer) (string, bool) {
+// singleInput takes one positional argument or, when the argument is
+// missing, one line from stdin. Empty input is a usage error. Error
+// messages name the command they came from.
+func singleInput(command string, args []string, stdin io.Reader, stderr io.Writer) (string, bool) {
 	if len(args) > 1 {
-		fmt.Fprintln(stderr, "explain takes exactly one URL argument")
+		fmt.Fprintf(stderr, "%s takes exactly one URL argument\n", command)
 		return "", false
 	}
 
@@ -74,7 +74,7 @@ func explainInput(args []string, stdin io.Reader, stderr io.Writer) (string, boo
 	}
 	line := firstLine(string(data))
 	if line == "" {
-		fmt.Fprintln(stderr, "explain requires a URL argument, or one URL on stdin")
+		fmt.Fprintf(stderr, "%s requires a URL argument, or one URL on stdin\n", command)
 		return "", false
 	}
 	return line, true

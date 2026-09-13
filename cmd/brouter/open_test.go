@@ -1,0 +1,217 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// writeFakeBrowser creates an executable script that records its argv,
+// one entry per line, into a log file inside dir, and exits with
+// exitCode. It stands in for a real browser so open runs end to end
+// without a GUI.
+func writeFakeBrowser(t *testing.T, dir string, exitCode int) (script string, log string) {
+	t.Helper()
+
+	log = filepath.Join(dir, "argv.log")
+	script = filepath.Join(dir, "fake-browser")
+	body := fmt.Sprintf("#!/bin/sh\nfor arg in \"$@\"; do\n\tprintf '%%s\\n' \"$arg\" >> %s\ndone\nexit %d\n", log, exitCode)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script, log
+}
+
+func executableTargetConfig(browserPath string) string {
+	return fmt.Sprintf(`
+default = "fake"
+
+[browsers.fake]
+command = %q
+`, browserPath)
+}
+
+func readArgvLog(t *testing.T, log string) []string {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("cannot read argv log: %v", err)
+	}
+	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+}
+
+func TestOpenLaunchesTheSelectedBrowserThroughARule(t *testing.T) {
+	// Given a rule that routes a URL to an executable target, when open
+	// runs, the browser process receives the URL as its one argument and
+	// the command reports success without touching stderr.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser)+`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://docs.example/page?a=1&b=2")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "https://docs.example/page?a=1&b=2" {
+		t.Errorf("browser argv = %q, want exactly the URL as one argument", argv)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestOpenFallsBackToTheDefaultTarget(t *testing.T) {
+	// Given no rule matches, when open runs, the default target launches;
+	// fallback never switches to the system default handler.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://anything.example/")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	if argv := readArgvLog(t, log); len(argv) != 1 {
+		t.Errorf("browser argv = %q, want the URL delivered once", argv)
+	}
+}
+
+func TestOpenReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
+	// Given no URL argument, when open runs, it reads one URL from stdin,
+	// matching explain's input contract.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	code, _, stderr := runCapture(t, "https://stdin.example/x\n", "open", "-config", path)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	if argv := readArgvLog(t, log); len(argv) != 1 || argv[0] != "https://stdin.example/x" {
+		t.Errorf("browser argv = %q, want the stdin URL", argv)
+	}
+}
+
+func TestOpenReportsUnsupportedProfileInsteadOfIgnoringIt(t *testing.T) {
+	// Given a known target that sets a profile, when open runs, it fails
+	// visibly instead of accepting the profile and silently ignoring it.
+	path := writeConfig(t, `
+default = "brave-work"
+
+[browsers.brave-work]
+browser = "brave"
+profile = "Work"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "not supported") {
+		t.Errorf("stderr = %q, want an unsupported-profile report", stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing on failure", stdout)
+	}
+}
+
+func TestOpenFailsVisiblyWhenTheExecutableIsMissing(t *testing.T) {
+	// Given an executable target whose path does not exist, when open
+	// runs, the failure names the target and nothing is launched.
+	missing := filepath.Join(t.TempDir(), "no-browser")
+	path := writeConfig(t, executableTargetConfig(missing))
+
+	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "fake") || !strings.Contains(stderr, missing) {
+		t.Errorf("stderr = %q, want the target and missing path named", stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing on failure", stdout)
+	}
+}
+
+func TestOpenSurfacesBrowserLaunchFailure(t *testing.T) {
+	// Given a browser that exits nonzero, when open runs, the exit status
+	// surfaces as a failure; there is no silent fallback.
+	dir := t.TempDir()
+	browser, _ := writeFakeBrowser(t, dir, 3)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "3") {
+		t.Errorf("stderr = %q, want the browser exit status named", stderr)
+	}
+}
+
+func TestOpenRejectsRouterAsTarget(t *testing.T) {
+	// Given an executable target pointing at the running brouter binary,
+	// when open runs, the recursion is rejected before launch. The test
+	// binary stands in for the brouter executable.
+	path := writeConfig(t, executableTargetConfig(os.Args[0]))
+
+	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "brouter itself") {
+		t.Errorf("stderr = %q, want the recursion rejection", stderr)
+	}
+}
+
+func TestOpenRejectsNonHTTPSchemes(t *testing.T) {
+	// Given a URL the router would never route, when open runs, it fails
+	// with the validation exit code before any process starts.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	code, _, stderr := runCapture(t, "", "open", "-config", path, "ftp://example.com/file")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if stderr == "" {
+		t.Error("stderr = empty, want a scheme rejection")
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a browser process started for a rejected URL")
+	}
+}
+
+func TestOpenRejectsMultipleURLArguments(t *testing.T) {
+	// Given two URL arguments, when open runs, it is a usage error.
+	dir := t.TempDir()
+	browser, _ := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	code, _, _ := runCapture(t, "", "open", "-config", path, "https://a.example/", "https://b.example/")
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+}
