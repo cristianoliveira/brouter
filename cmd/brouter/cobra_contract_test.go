@@ -225,3 +225,39 @@ func TestContractSubcommandHelpAfterPositionalIsUsageError(t *testing.T) {
 		t.Errorf("stderr = %q, want the positional named", stderr)
 	}
 }
+
+func TestContractLegacyFlagErrorWording(t *testing.T) {
+	// Given the pre-migration std-flag parser emitted specific error
+	// lines plus a per-command usage block, when flag misuse happens,
+	// the same lines appear on stderr with the usage exit code.
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"unknown long flag", []string{"validate", "--bogus"},
+			[]string{"flag provided but not defined: -bogus", "Usage of validate:"}},
+		{"unknown shorthand cluster", []string{"validate", "-bogus"},
+			[]string{"flag provided but not defined: -b", "Usage of validate:"}},
+		{"missing flag value", []string{"validate", "-config"},
+			[]string{"flag needs an argument: -config", "Usage of validate:"}},
+		{"root unknown flag", []string{"-bogus"},
+			[]string{`unknown command "-bogus"`, "brouter help"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := runCapture(t, "", tc.args...)
+			if code != exitUsage {
+				t.Fatalf("exit code = %d, want %d", code, exitUsage)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+				}
+			}
+		})
+	}
+}

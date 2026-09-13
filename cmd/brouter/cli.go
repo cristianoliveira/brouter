@@ -1,12 +1,23 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+// flagError marks a parser error and the command that produced it, so
+// run() can re-emit it in the pre-migration std-flag wording and usage
+// block.
+type flagError struct {
+	command string
+	message string
+}
+
+func (e *flagError) Error() string { return e.message }
 
 // cli owns the Cobra command tree and the exit code produced by one
 // invocation. Construction is injectable: tests and main hand in the
@@ -41,6 +52,11 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.SetIn(stdin)
+	// Parser errors carry their command so run() can re-emit them with
+	// the pre-migration std-flag wording and usage block.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return &flagError{command: cmd.Name(), message: err.Error()}
+	})
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		// One usage text for every help surface, byte-identical to the
 		// pre-migration CLI, always on stdout with exit 0.
@@ -133,11 +149,15 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 func (c *cli) run(args []string) int {
 	args = normalizeLegacyArgs(args)
 
-	// Unknown commands keep the legacy guidance instead of Cobra's
-	// default wording: same channel, same exit code, same two lines.
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") && !isKnownCommand(args[0]) {
-		fmt.Fprintf(c.stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
-		return exitUsage
+	// Unknown leading tokens keep the legacy guidance instead of Cobra's
+	// default wording: same channel, same exit code, same two lines. The
+	// help-flag spellings still route into the tree for the usage text.
+	if len(args) > 0 {
+		first := args[0]
+		if first != "--help" && first != "-h" && !isKnownCommand(first) {
+			fmt.Fprintf(c.stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", first)
+			return exitUsage
+		}
 	}
 
 	// Subcommand help keeps the std-flag channel: guidance on stderr
@@ -148,12 +168,40 @@ func (c *cli) run(args []string) int {
 
 	c.root.SetArgs(args)
 	if err := c.root.Execute(); err != nil {
-		// Remaining errors here are parser-level (unknown flags, invalid
-		// flag values): usage-class failures with guidance on stderr.
+		var ferr *flagError
+		if errors.As(err, &ferr) {
+			c.emitLegacyFlagError(ferr)
+			return exitUsage
+		}
 		fmt.Fprintf(c.stderr, "%v\n", err)
 		return exitUsage
 	}
 	return c.exitCode
+}
+
+// emitLegacyFlagError re-renders a parser error with the pre-migration
+// std-flag wording and usage block: `flag provided but not defined: -x`
+// and `flag needs an argument: -config` followed by the command's flag
+// summary, all on stderr.
+func (c *cli) emitLegacyFlagError(ferr *flagError) {
+	message := ferr.message
+	switch {
+	case strings.Contains(message, "unknown shorthand flag: "):
+		// pflag: unknown shorthand flag: 'b' in -bogus; the legacy parser
+		// reported the full remaining cluster: -bogus
+		if marker := "in "; strings.Contains(message, marker) {
+			cluster := message[strings.LastIndex(message, marker)+len(marker):]
+			message = fmt.Sprintf("flag provided but not defined: %s", cluster)
+		}
+	case strings.Contains(message, "unknown flag: "):
+		name := strings.TrimPrefix(message, "unknown flag: ")
+		message = fmt.Sprintf("flag provided but not defined: -%s", strings.TrimLeft(name, "-"))
+	case strings.Contains(message, "flag needs an argument:"):
+		message = strings.Replace(message, "--", "-", 1)
+	}
+	fmt.Fprintf(c.stderr, "%s\n", message)
+	fmt.Fprintf(c.stderr, "Usage of %s:\n", ferr.command)
+	fmt.Fprintf(c.stderr, "  -config string\n    \tpath to config.toml (default: per-OS config location)\n")
 }
 
 // exitWith records a business exit code (0/1) from a command body. Only
