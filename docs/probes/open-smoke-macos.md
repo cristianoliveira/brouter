@@ -54,30 +54,36 @@ binaries itself).
 
 ## Linux/NixOS run (pending, user-attested)
 
-Same receiver method on the NixOS+Sway target; expected warm reuse per
-TASK-0007 (stable executable `/run/current-system/sw/bin/brave`). One
-paste, from the repo root on the target; run it twice — once with Brave
-open (warm), once after quitting it (cold) — and keep both outputs:
+Minimal protocol with fixed benign URLs — the browser shows the URL
+itself (address bar carries the query and fragment), so success is the
+user observing the exact URL open; visible failure is any brouter error
+or refusal text. Run from the repo root on the target.
+
+One-time setup:
 
 ```sh
-go build -o /tmp/brouter-smoke ./cmd/brouter && cat > /tmp/brouter-smoke-recv.py <<'EOF'
-import http.server, socketserver, sys
-log = open("/tmp/brouter-smoke-receipts.log", "a", buffering=1)
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        log.write(f"{self.command} {self.path} {self.headers.get('User-Agent','')}\n")
-        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
-    def log_message(self, *a): pass
-socketserver.TCPServer.allow_reuse_address = True
-socketserver.TCPServer(("127.0.0.1", 18081), H).serve_forever()
-EOF
-python3 /tmp/brouter-smoke-recv.py & sleep 1
-printf 'default = "s"\n\n[browsers.s]\nbrowser = "brave"\n' > /tmp/brouter-smoke.toml
-echo "== pre-state =="; pgrep -a brave || echo "brave not running (cold)"
-nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
-  "http://127.0.0.1:18081/warm?kept=1&tag=smoke-nixos"; echo "open rc=$?"
-sleep 3; cat /tmp/brouter-smoke-receipts.log
+printf 'default = "brave"\n\n[browsers.brave]\nbrowser = "brave"\n' \
+  > /tmp/brouter-smoke.toml
 ```
 
-Record: the pre-state line, `open rc=`, and the receipt lines for both
-the warm and the cold run.
+Cold run (Brave not running):
+
+```sh
+nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-cold?case=1#cold'
+```
+
+Then quit Brave via the UI and run the warm case (Brave already
+running):
+
+```sh
+nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-warm?case=2#warm'
+```
+
+Record for each run: cold or warm, success (the exact URL appeared in
+the browser) or the visible failure text. Expected: direct launch of
+the stable Brave executable (`/run/current-system/sw/bin/brave` per
+TASK-0007), warm run reusing the running instance; query and fragment
+preserved in the address bar. Do not reuse TASK-0007 probe receipts —
+this is direct-launch evidence.
