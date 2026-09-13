@@ -1,7 +1,7 @@
 ---
 id: TASK-0002
 title: Bootstrap a minimal Go executable and package boundaries
-status: todo
+status: doing
 depends_on: [TASK-0001]
 priority: high
 tags: [go, foundation]
