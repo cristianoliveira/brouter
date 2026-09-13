@@ -209,24 +209,32 @@ func validateTarget(name string, spec browserSpec) (TargetDefinition, error) {
 	case hasBrowser && hasCommand:
 		return TargetDefinition{}, fmt.Errorf("target must be either a known browser or an executable, not both")
 	case hasCommand:
-		if spec.Profile != "" {
-			return TargetDefinition{}, fmt.Errorf("executable targets do not support a profile; profiles are a known-browser feature")
-		}
-		if strings.ContainsAny(spec.Command, shellMetacharacters) {
-			return TargetDefinition{}, fmt.Errorf("command must be a single literal path without shell metacharacters")
-		}
-		return TargetDefinition{Kind: "executable", Command: spec.Command}, nil
+		return validateExecutableTarget(spec)
 	case hasBrowser:
-		if !KnownBrowsers[spec.Browser] {
-			return TargetDefinition{}, fmt.Errorf("unknown browser %q (known: brave, chrome, chromium, edge, firefox)", spec.Browser)
-		}
-		def := TargetDefinition{Kind: "known", Browser: spec.Browser}
-		if spec.Profile != "" {
-			def.Profile = spec.Profile
-			def.ProfileSet = true
-		}
-		return def, nil
+		return validateKnownTarget(spec)
 	default:
 		return TargetDefinition{}, fmt.Errorf("target needs either a browser or a command")
 	}
+}
+
+func validateExecutableTarget(spec browserSpec) (TargetDefinition, error) {
+	if spec.Profile != "" {
+		return TargetDefinition{}, fmt.Errorf("executable targets do not support a profile; profiles are a known-browser feature")
+	}
+	if strings.ContainsAny(spec.Command, shellMetacharacters) {
+		return TargetDefinition{}, fmt.Errorf("command must be a single literal path without shell metacharacters")
+	}
+	return TargetDefinition{Kind: "executable", Command: spec.Command}, nil
+}
+
+func validateKnownTarget(spec browserSpec) (TargetDefinition, error) {
+	if !KnownBrowsers[spec.Browser] {
+		return TargetDefinition{}, fmt.Errorf("unknown browser %q (known: brave, chrome, chromium, edge, firefox)", spec.Browser)
+	}
+	def := TargetDefinition{Kind: "known", Browser: spec.Browser}
+	if spec.Profile != "" {
+		def.Profile = spec.Profile
+		def.ProfileSet = true
+	}
+	return def, nil
 }
