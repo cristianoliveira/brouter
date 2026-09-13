@@ -21,9 +21,10 @@
 # the receipt logger additionally redacts query/fragment/userinfo and
 # never logs raw argv.
 #
-# Private selftest hook: BROUTER_SPIKE_SKIP_SESSION_GATE=1 bypasses the
-# session gate for the selftest harness only. It is not a user flag,
-# appears in no help text, and real sessions never set it.
+# Private selftest hook: the selftest harness arms
+# BROUTER_SPIKE_SKIP_SESSION_GATE in-process to bypass the session gate
+# inside forked subshells. Public commands unset the variable before
+# dispatch, so environment residue can never bypass the gate.
 set -eu
 
 SPIKE_DIR="${BROUTER_SPIKE_DIR:-$PWD/brouter-spike}"
@@ -188,12 +189,13 @@ cmd_help() {
 }
 
 cmd_selftest() {
-	# Host-agnostic controlled harness. Session-gate refusal is forced by
-	# removing WAYLAND_DISPLAY; install/probe paths run with the documented
-	# selftest hook and fake xdg tools. set +e: failures are
-	# checked explicitly, never by the shell exiting.
+	# Host-agnostic controlled harness. Session-gate refusal is proven on
+	# the public path (WAYLAND_DISPLAY removed AND hook variable set: the
+	# gate must still refuse); install/probe/reset run through dispatch in
+	# forked subshells with the hook armed in-process, plus fake xdg tools.
+	# set +e: failures are checked explicitly, never by the shell exiting.
 	set +e
-	run() { "$0" "$@"; }
+	run() { ( dispatch "$@" ); }
 	work=$(mktemp -d)
 	fakes=$work/bin
 	mkdir -p "$fakes"
@@ -214,16 +216,18 @@ cmd_selftest() {
 		fi
 	}
 
-	# 1. session gate: install without a Sway session refuses.
-	out=$(env -u BROUTER_SPIKE_SKIP_SESSION_GATE -u WAYLAND_DISPLAY PATH="$fakes:$PATH" "$0" install 2>&1)
+	# 1. session gate: public commands refuse without a Sway session even
+	# when the hook variable is set (environment residue is inert).
+	out=$(env -u WAYLAND_DISPLAY BROUTER_SPIKE_SKIP_SESSION_GATE=1 PATH="$fakes:$PATH" "$0" install 2>&1)
 	gate_rc=$?
-	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses"
+	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses despite hook variable"
 	check $(printf '%s' "$out" | grep -qE "Sway|NixOS"; echo $?) "gate refusal names the Sway requirement"
 
-	# 2-6. functional paths with the documented selftest hook.
+	# 2-6. functional paths: hook armed in-process, fakes on PATH.
 	export PATH="$fakes:$PATH"
 	export BROUTER_SPIKE_SKIP_SESSION_GATE=1
 	export BROUTER_SPIKE_DIR="$work/spike"
+	SPIKE_DIR="$work/spike" # subshells inherit; mirrors startup normalization
 	export HOME="$work/home"
 	mkdir -p "$HOME"
 
@@ -273,31 +277,39 @@ cmd_selftest() {
 	exit "$fail"
 }
 
-case ${1:-} in
-inspect)
-	require_nixos_sway
-	cmd_inspect
-	;;
-install)
-	require_nixos_sway
-	cmd_install
-	;;
-probe)
-	require_nixos_sway
-	shift
-	cmd_probe "$@"
-	;;
-reset)
-	cmd_reset
-	;;
-selftest)
-	cmd_selftest
-	;;
-help | --help | -h)
-	cmd_help
-	;;
-*)
-	cmd_help >&2
-	exit 2
-	;;
-esac
+dispatch() {
+	case $1 in
+	inspect)
+		require_nixos_sway
+		cmd_inspect
+		;;
+	install)
+		require_nixos_sway
+		cmd_install
+		;;
+	probe)
+		require_nixos_sway
+		shift
+		cmd_probe "$@"
+		;;
+	reset)
+		cmd_reset
+		;;
+	selftest)
+		cmd_selftest
+		;;
+	help | --help | -h)
+		cmd_help
+		;;
+	*)
+		cmd_help >&2
+		exit 2
+		;;
+	esac
+}
+
+# Environment hygiene: the selftest hook is private to the harness.
+# Public commands strip it before dispatch so a stray export (e.g. left
+# in a shell rc) can never silently bypass the session gate.
+unset BROUTER_SPIKE_SKIP_SESSION_GATE
+dispatch "${1:-}"
