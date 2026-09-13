@@ -182,8 +182,12 @@ func verifyProfileDirectory(browser, profile string, env *Env) error {
 		return fmt.Errorf("known browser %q has no profile location on this platform (brave and chrome are supported)", browser)
 	}
 	dir := filepath.Join(root, profile)
-	if !env.exists(dir) {
+	info, err := env.Stat(dir)
+	switch {
+	case err != nil:
 		return fmt.Errorf("profile directory %s does not exist; brouter never creates profiles — create or verify it in the browser first", dir)
+	case !info.IsDir():
+		return fmt.Errorf("profile path %s exists but is not a directory; brouter never creates profiles", dir)
 	}
 	return nil
 }

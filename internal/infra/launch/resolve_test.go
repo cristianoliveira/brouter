@@ -43,7 +43,7 @@ func fakeEnv(goos string, home string, existing []string, selfExecutable string)
 		},
 		Stat: func(path string) (fs.FileInfo, error) {
 			if isThere(path) {
-				return fakeFileInfo{}, nil
+				return fakeFileInfo{dir: true}, nil
 			}
 			return nil, fs.ErrNotExist
 		},
@@ -252,14 +252,14 @@ func TestResolveNeverReturnsEmptyExecutable(t *testing.T) {
 
 // fakeFileInfo satisfies fs.FileInfo for existence checks; only IsDir
 // matters to the resolver, which accepts any existing regular path.
-type fakeFileInfo struct{}
+type fakeFileInfo struct{ dir bool }
 
-func (fakeFileInfo) Name() string       { return "fake" }
-func (fakeFileInfo) Size() int64        { return 1 }
-func (fakeFileInfo) Mode() fs.FileMode  { return 0o755 }
-func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (fakeFileInfo) IsDir() bool        { return false }
-func (fakeFileInfo) Sys() any           { return nil }
+func (f fakeFileInfo) Name() string       { return "fake" }
+func (f fakeFileInfo) Size() int64        { return 1 }
+func (f fakeFileInfo) Mode() fs.FileMode  { return 0o755 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return f.dir }
+func (f fakeFileInfo) Sys() any           { return nil }
 
 func TestResolveProfiledBraveConstructsProfileArgument(t *testing.T) {
 	// Given a brave target with an existing profile directory, when
@@ -371,5 +371,30 @@ func TestResolveWithoutProfileKeepsArgsEmpty(t *testing.T) {
 	}
 	if len(plan.Args) != 0 {
 		t.Errorf("args = %q, want none for a no-profile target", plan.Args)
+	}
+}
+
+func TestResolveRejectsRegularFileAtProfilePath(t *testing.T) {
+	// Given a regular file (not a directory) at the expected profile
+	// path, when resolving, the profile is rejected: the on-disk
+	// directory requirement is explicit, and launching would not target
+	// a real profile.
+	env := fakeEnv("linux", "/home/u", []string{"/usr/bin/brave"}, "/bin/brouter")
+	profilePath := "/home/u/.config/BraveSoftware/Brave-Browser/Ghost"
+	env.Stat = func(path string) (fs.FileInfo, error) {
+		if path == profilePath {
+			return fakeFileInfo{dir: false}, nil
+		}
+		return nil, fs.ErrNotExist
+	}
+
+	_, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "brave", Profile: "Ghost", ProfileSet: true,
+	}, "work", env)
+	if err == nil {
+		t.Fatal("Resolve succeeded with a regular file at the profile path, want rejection")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("error %q does not state the path is not a directory", err)
 	}
 }
