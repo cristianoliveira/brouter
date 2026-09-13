@@ -10,8 +10,10 @@
 - `internal/infra` — platform, config, and process adapters (file loading,
   browser launching). Planned; created when code needs it.
 
-- `tools/` — development-only tooling invoked by the gate and by developers;
-  never imported by product code. Standard-library only.
+- `scripts/check.sh` — the quality gate entry point (POSIX shell, by
+  decision: no Go program orchestrates or lints Go). Its pinned lint
+  configuration lives in `.golangci.yml`; tests in `scripts/check_test.go`
+  exercise it with controlled executables.
 
 ## Boundary rules
 

@@ -1,0 +1,17 @@
+# Pinned normal-gate lint configuration (TASK-0003). The initial rule set
+# is funlen and cyclop only; go vet and staticcheck-grade analyzers stay in
+# the separate TASK-0005 commands. Do not quietly expand this set.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - cyclop
+    - funlen
+
+  settings:
+    cyclop:
+      max-complexity: 10
+      package-average: 5.0
+    funlen:
+      lines: 100

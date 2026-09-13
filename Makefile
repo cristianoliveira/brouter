@@ -20,4 +20,4 @@ test:
 	@go test -vet=off ./...
 
 lint:
-	@go run ./tools/lint .
+	@golangci-lint run
