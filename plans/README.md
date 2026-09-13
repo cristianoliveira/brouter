@@ -7,7 +7,7 @@ One default browser does not represent separate work contexts. Users need predic
 - Implementation language: Go.
 - Supported operating systems: NixOS with Nix-installed browsers on Sway (Wayland), and current macOS (Darwin), Apple Silicon first. Intel is unverified, not an initial support requirement. Other Linux distributions and Flatpak/Snap are outside initial support.
 - Repository and Go module path: `github.com/cristianoliveira/brouter` (verified from origin).
-- Configuration is a file suitable for dotfiles version control; there is one explicit override and no implicit merge.
+- Configuration is a file suitable for dotfiles version control.
 - The main workflow routes links to different browsers. Optional browser profiles are desired, but remain a separate capability.
 - Favor Brave and Chrome-based browsers where concessions are necessary; do not design out other browsers.
 - Provide diagnostics for configuration and regex matching.
