@@ -27,4 +27,3 @@ dbus-send --session --dest=org.freedesktop.Notifications --type=method_call \
 	string:"brouter handler failed" string:"status $status — see handler.log" \
 	int32:5000 >/dev/null 2>&1 || true
 exit "$status"
-
