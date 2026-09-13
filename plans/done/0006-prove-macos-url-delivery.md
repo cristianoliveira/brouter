@@ -1,7 +1,7 @@
 ---
 id: TASK-0006
 title: Prove macOS URL receipt and browser forwarding
-status: todo
+status: done
 depends_on: [TASK-0002]
 priority: high
 tags: [macos, spike]
@@ -27,3 +27,7 @@ Record real macOS version, commands, observed events and destination. Use benign
 
 ## Non-goals
 Production installer, signing, or settled helper choice before the experiment.
+
+
+## Verification gap
+The spike proved an observable temporary `/tmp` log for received/forwarded/failed events, but did not select and verify the production GUI failure mechanism. Before packaging, choose and test the supported mechanism (for example unified logging or a user notification), including behavior when notification permission is unavailable and how users discover failures without persistent URL logging.

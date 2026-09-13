@@ -39,6 +39,9 @@ needs them — no empty scaffolding:
 
 ## Current state
 
-Only `cmd/brouter` exists: help/success and invalid-invocation paths, with
-tests. Routing, configuration, and launching arrive in later tasks and will
-populate the packages above.
+`cmd/brouter` exposes help and invalid-invocation paths only.
+`internal/domain` implements the pure routing core: exact-host,
+subdomain, and full-URL-regex matchers with first-match-wins fallback,
+ordered reasons, skipped-rule tracking, and typed invalid-URL errors —
+no filesystem, process, or network access (standard library only). The
+CLI does not consume it yet; wiring arrives with the config/open tasks.
