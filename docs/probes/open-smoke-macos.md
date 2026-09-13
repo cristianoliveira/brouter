@@ -55,16 +55,29 @@ binaries itself).
 ## Linux/NixOS run (pending, user-attested)
 
 Same receiver method on the NixOS+Sway target; expected warm reuse per
-TASK-0007 (stable executable `/run/current-system/sw/bin/brave`):
+TASK-0007 (stable executable `/run/current-system/sw/bin/brave`). One
+paste, from the repo root on the target; run it twice — once with Brave
+open (warm), once after quitting it (cold) — and keep both outputs:
 
 ```sh
-go build -o /tmp/brouter-smoke/brouter ./cmd/brouter
-python3 receiver.py receipts.log &          # on the target
-printf 'default = "s"\n\n[browsers.s]\nbrowser = "brave"\n' > smoke.toml
-pgrep -a brave                              # record pre-state (cold vs warm)
-/tmp/brouter-smoke/brouter open -config smoke.toml "http://127.0.0.1:18081/warm?kept=1&tag=smoke-nixos"
-                                            # then repeat after closing Brave for the cold run
-grep open receipts.log
+go build -o /tmp/brouter-smoke ./cmd/brouter && cat > /tmp/brouter-smoke-recv.py <<'EOF'
+import http.server, socketserver, sys
+log = open("/tmp/brouter-smoke-receipts.log", "a", buffering=1)
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        log.write(f"{self.command} {self.path} {self.headers.get('User-Agent','')}\n")
+        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+socketserver.TCPServer.allow_reuse_address = True
+socketserver.TCPServer(("127.0.0.1", 18081), H).serve_forever()
+EOF
+python3 /tmp/brouter-smoke-recv.py & sleep 1
+printf 'default = "s"\n\n[browsers.s]\nbrowser = "brave"\n' > /tmp/brouter-smoke.toml
+echo "== pre-state =="; pgrep -a brave || echo "brave not running (cold)"
+nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
+  "http://127.0.0.1:18081/warm?kept=1&tag=smoke-nixos"; echo "open rc=$?"
+sleep 3; cat /tmp/brouter-smoke-receipts.log
 ```
 
-Record: pre-state, exit code, elapsed, receipt lines.
+Record: the pre-state line, `open rc=`, and the receipt lines for both
+the warm and the cold run.
