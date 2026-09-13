@@ -21,10 +21,10 @@
 # the receipt logger additionally redacts query/fragment/userinfo and
 # never logs raw argv.
 #
-# Private selftest hook: the selftest harness arms
-# BROUTER_SPIKE_SKIP_SESSION_GATE in-process to bypass the session gate
-# inside forked subshells. Public commands unset the variable before
-# dispatch, so environment residue can never bypass the gate.
+# Safety: there is deliberately NO gate bypass — no flag, no environment
+# variable. selftest covers only host-agnostic checks; the install/probe
+# lifecycle is exercised on the real NixOS+Sway target and recorded in
+# docs/probes/.
 set -eu
 
 SPIKE_DIR="${BROUTER_SPIKE_DIR:-$PWD/brouter-spike}"
@@ -34,12 +34,8 @@ log() { printf '%s\n' "$*"; }
 die() { printf '%s\n' "refusing: $*" >&2; exit 1; }
 
 require_nixos_sway() {
-	# Selftest-only hook: lets the controlled harness exercise install and
-	# probe paths on any host. Real users never set this; the session gate
-	# stays closed without it.
-	if [ "${BROUTER_SPIKE_SKIP_SESSION_GATE:-0}" = "1" ]; then
-		return 0
-	fi
+	# Unconditional: no bypass exists. selftest never invokes the gated
+	# commands; lifecycle is validated on the real target only.
 	[ "$(uname -s)" = "Linux" ] || die "this is not Linux; the spike must run on the NixOS target"
 	grep -q '^ID=nixos' /etc/os-release 2>/dev/null || die "host is not NixOS (os-release lacks ID=nixos)"
 	[ -n "${WAYLAND_DISPLAY:-}" ] || die "WAYLAND_DISPLAY is not set; a real Sway Wayland session is required"
@@ -189,20 +185,12 @@ cmd_help() {
 }
 
 cmd_selftest() {
-	# Host-agnostic controlled harness. Session-gate refusal is proven on
-	# the public path (WAYLAND_DISPLAY removed AND hook variable set: the
-	# gate must still refuse); install/probe/reset run through dispatch in
-	# forked subshells with the hook armed in-process, plus fake xdg tools.
-	# set +e: failures are checked explicitly, never by the shell exiting.
+	# Host-agnostic checks only: the public session-gate refusal, the fixed
+	# probe URLs, and receiver redaction. There is deliberately no gate
+	# bypass, so selftest never runs install/probe/reset; lifecycle is
+	# exercised on the real NixOS+Sway target (docs/probes/). set +e:
+	# failures are checked explicitly, never by the shell exiting.
 	set +e
-	run() { ( dispatch "$@" ); }
-	work=$(mktemp -d)
-	fakes=$work/bin
-	mkdir -p "$fakes"
-
-	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %s/xdg-mime.calls\nexit 0\n' "$work" > "$fakes/xdg-mime"
-	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %s/xdg-open.calls\nrc=${XDG_FAKE_OPEN_RC:-0}\n[ "$rc" -ne 0 ] || "$BROUTER_SPIKE_DIR/receive.sh" "$1"\nexit "$rc"\n' "$work" > "$fakes/xdg-open"
-	chmod +x "$fakes/xdg-mime" "$fakes/xdg-open"
 
 	fail=0
 	check() {
@@ -216,53 +204,19 @@ cmd_selftest() {
 		fi
 	}
 
-	# 1. session gate: public commands refuse without a Sway session even
-	# when the hook variable is set (environment residue is inert).
-	out=$(env -u WAYLAND_DISPLAY BROUTER_SPIKE_SKIP_SESSION_GATE=1 PATH="$fakes:$PATH" "$0" install 2>&1)
+	# 1. session gate: the public install path refuses off-target.
+	out=$(env -u WAYLAND_DISPLAY "$0" install 2>&1)
 	gate_rc=$?
-	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses despite hook variable"
+	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses"
 	check $(printf '%s' "$out" | grep -qE "Sway|NixOS"; echo $?) "gate refusal names the Sway requirement"
 
-	# 2-6. functional paths: hook armed in-process, fakes on PATH.
-	export PATH="$fakes:$PATH"
-	export BROUTER_SPIKE_SKIP_SESSION_GATE=1
-	export BROUTER_SPIKE_DIR="$work/spike"
-	SPIKE_DIR="$work/spike" # subshells inherit; mirrors startup normalization
-	export HOME="$work/home"
-	mkdir -p "$HOME"
+	# 2. probe URLs: fixed, benign, secret-free, unknown index rejected.
+	check $(test "$(probe_url 1)" = "https://spike.example/probe-1"; echo $?) "probe 1 url is the fixed benign target"
+	check $(test "$(probe_url 2)" = "https://spike.example/probe-2"; echo $?) "probe 2 url is the fixed benign target"
+	check $(if probe_url 3 >/dev/null 2>&1; then false; else true; fi; echo $?) "unknown probe index is rejected"
+	check $(if printf '%s %s' "$(probe_url 1)" "$(probe_url 2)" | grep -qE '[?&#@]'; then false; else true; fi; echo $?) "probe urls carry no query, fragment, or userinfo"
 
-	out=$(run install)
-	check "$?" "install succeeds in isolated mode"
-	check $(test -f "$BROUTER_SPIKE_DIR/receive.sh"; echo $?) "receiver written into workspace"
-	check $(test -f "$BROUTER_SPIKE_DIR/xdg-data/applications/$HANDLER_ID.desktop"; echo $?) "handler desktop file isolated"
-	check $(grep -c "default $HANDLER_ID.desktop" "$work/xdg-mime.calls" | grep -q 2; echo $?) "http and https registered"
-	check $(test ! -e "$HOME/.local/share/applications/$HANDLER_ID.desktop"; echo $?) "real applications dir untouched"
-
-	out=$(run probe 1)
-	check "$?" "probe 1 succeeds with passing opener"
-	check $(grep -q "probe-1" "$BROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-1"
-
-	out=$(run probe 2)
-	check "$?" "probe 2 succeeds (sequential delivery)"
-	check $(grep -q "probe-2" "$BROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-2"
-
-	export XDG_FAKE_OPEN_RC=9
-	run probe 1
-	probe_rc=$?
-	unset XDG_FAKE_OPEN_RC
-	check $(test "$probe_rc" = 9; echo $?) "probe propagates opener failure exit 9"
-
-	out=$(run reset)
-	reset_rc=$?
-	check "$reset_rc" "reset succeeds"
-	check $(test ! -d "$BROUTER_SPIKE_DIR/xdg-data"; echo $?) "reset removed isolated registrations"
-
-	out=$(run reset)
-	check "$?" "reset is safe when already absent"
-
-	unset BROUTER_SPIKE_SKIP_SESSION_GATE
-
-	# 7. receiver redaction: secrets never reach the receipt.
+	# 3. receiver redaction: secrets never reach the receipt.
 	dir=$(mktemp -d)
 	write_receiver "$dir/receive.sh"
 	"$dir/receive.sh" "https://spike.example/?token=super-secret-123"
@@ -270,9 +224,8 @@ cmd_selftest() {
 	check $(grep -q "query/fragment redacted" "$dir/received.log"; echo $?) "receipt marks redaction"
 	rm -rf "$dir"
 
-	rm -rf "$work"
 	if [ "$fail" = 0 ]; then
-		log "selftest PASS: session gate, isolated install, probes, failure propagation, reset, and redaction verified"
+		log "selftest PASS: gate refusal, probe urls, and receiver redaction verified (host-agnostic)"
 	fi
 	exit "$fail"
 }
@@ -308,8 +261,4 @@ dispatch() {
 	esac
 }
 
-# Environment hygiene: the selftest hook is private to the harness.
-# Public commands strip it before dispatch so a stray export (e.g. left
-# in a shell rc) can never silently bypass the session gate.
-unset BROUTER_SPIKE_SKIP_SESSION_GATE
 dispatch "${1:-}"
