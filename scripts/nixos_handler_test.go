@@ -99,7 +99,13 @@ func TestNixosHandlerWrapperForwardsURLsToEmbeddedBrouter(t *testing.T) {
 
 	home := t.TempDir()
 	rawURL := "https://company.example/page?q=14&tag=nixos#top"
-	env := append(os.Environ(), "HOME="+home, "XDG_STATE_HOME="+filepath.Join(home, "state"))
+	// XDG_CONFIG_HOME is cleared explicitly: an inherited runner value
+	// would redirect the config path away from HOME and the wrapper
+	// honors it by design. Empty means unset for both the wrapper and
+	// os.UserConfigDir.
+	env := append(os.Environ(), "HOME="+home,
+		"XDG_STATE_HOME="+filepath.Join(home, "state"),
+		"XDG_CONFIG_HOME=")
 	out, status := runWrapper(t, wrapper, env, rawURL)
 	if status != 0 {
 		t.Fatalf("wrapper status = %d, want 0\n%s", status, out)
