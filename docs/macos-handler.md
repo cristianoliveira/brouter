@@ -70,10 +70,14 @@ unchanged by packaging.
 
 ## Supported platforms
 
-Tested: macOS 26.x on Apple Silicon. The bundle declares a minimum of
-macOS 13; older versions are untested. Intel is untested. Linux and
-other platforms use their own delivery mechanisms and are out of scope
-for this handler.
+Target and tested: **arm64 only**, macOS 26.x on Apple Silicon. The
+build pins `GOARCH=arm64` and `clang -arch arm64` so the bundle is
+deterministically arm64 even when built from a shell running under
+Rosetta (a translated shell would otherwise emit an x86_64 shim beside
+the arm64 Go binary). Running the bundle under Rosetta or on Intel is
+untested and unsupported. The bundle declares a minimum of macOS 13;
+older versions are untested. Linux and other platforms use their own
+delivery mechanisms and are out of scope for this handler.
 
 ## Diagnostics
 

@@ -19,11 +19,16 @@ app="dist/BrouterHandler.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 
-echo "== building embedded brouter"
-go build -o "$app/Contents/MacOS/brouter" ./cmd/brouter
+# The bundle targets arm64 explicitly: without these pins, a build
+# shell running under Rosetta produces an x86_64 shim beside an arm64
+# Go binary. Deterministic single-arch output; see docs/macos-handler.md.
+target_arch="arm64"
 
-echo "== building native event shim"
-clang -fobjc-arc -framework Foundation -framework CoreServices \
+echo "== building embedded brouter ($target_arch)"
+GOOS=darwin GOARCH=$target_arch go build -o "$app/Contents/MacOS/brouter" ./cmd/brouter
+
+echo "== building native event shim ($target_arch)"
+clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreServices \
 	-o "$app/Contents/MacOS/BrouterHandler" \
 	native/macos/main.m
 

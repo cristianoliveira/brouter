@@ -238,3 +238,23 @@ func readArgvFile(t *testing.T, path string) []string {
 	}
 	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 }
+
+func TestMacosHandlerBundleTargetsArm64(t *testing.T) {
+	skipUnlessDarwin(t)
+
+	app := filepath.Join("..", "dist", "BrouterHandler.app")
+
+	// The declared target is arm64: the build script pins the Go target
+	// and the clang -arch flag so a translated build shell cannot produce
+	// a mixed-architecture bundle. Both executables must be arm64 only.
+	for _, binary := range []string{"Contents/MacOS/BrouterHandler", "Contents/MacOS/brouter"} {
+		full := filepath.Join(app, binary)
+		out, err := exec.Command("lipo", "-archs", full).CombinedOutput()
+		if err != nil {
+			t.Fatalf("lipo failed for %s: %v\n%s", binary, err, out)
+		}
+		if archs := strings.Fields(string(out)); len(archs) != 1 || archs[0] != "arm64" {
+			t.Errorf("%s architectures = %q, want exactly [arm64]", binary, string(out))
+		}
+	}
+}
