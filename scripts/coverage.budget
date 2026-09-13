@@ -1,0 +1,4 @@
+# Coverage floors per package (TASK-0005). Each line: <import-path> <minimum-percent>.
+# Lowering a number is an explained regression: the commit changing it must
+# state the rationale. Packages without a line here are reported, not gated.
+github.com/cristianoliveira/brouter/cmd/brouter 80
