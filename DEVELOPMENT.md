@@ -46,8 +46,11 @@ Contract:
 - `test` runs `go test -vet=off ./...`. The implicit vet pass is disabled
   on purpose: static analysis is a separate concern (TASK-0005), and the
   gate must stay exactly build+tests regardless of toolchain vet defaults.
-- Child processes run with `GOTOOLCHAIN=local` and `LC_ALL=C`: no silent
-  toolchain downloads, stable output ordering.
+- Toolchain pinning happens in the entry script before `go` resolves the
+  toolchain: `scripts/check.sh` exports `GOTOOLCHAIN=local` (so an older
+  local toolchain fails with an explicit version error instead of
+  downloading), and the harness re-pins the same variable plus `LC_ALL=C`
+  for child steps, keeping output ordering stable.
 
 Individual targets mirror the gate steps: `make build`, `make test`,
 `make lint`. Formatting, static analysis (go vet), race, coverage,

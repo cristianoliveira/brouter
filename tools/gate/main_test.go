@@ -144,6 +144,24 @@ func TestCheckScriptDelegatesToGateThroughPath(t *testing.T) {
 	}
 }
 
+func TestCheckScriptPinsToolchainBeforeResolvingGo(t *testing.T) {
+	// Given the ambient GOTOOLCHAIN is unset, when the entry script
+	// invokes go, the toolchain is already pinned to local so toolchain
+	// resolution itself can never download.
+	fakePath := writeFakeGo(t, `if [ "$1" = "run" ]; then echo "GOTOOLCHAIN=${GOTOOLCHAIN:-unset}"; exit 0; fi; exit 0`)
+
+	cmd := exec.Command("/bin/sh", "../../scripts/check.sh")
+	cmd.Env = []string{"PATH=" + fakePath}
+	out, err := cmd.Output()
+
+	if err != nil {
+		t.Fatalf("check.sh failed: %v", err)
+	}
+	if !strings.Contains(string(out), "GOTOOLCHAIN=local") {
+		t.Errorf("go saw GOTOOLCHAIN %q in output %q, want local", strings.TrimSpace(string(out)), out)
+	}
+}
+
 func testSteps() []step {
 	return []step{
 		{name: "lint", command: "go run ./tools/lint ."},

@@ -13,4 +13,11 @@ if ! command -v go >/dev/null 2>&1; then
 	exit 1
 fi
 
+# Pin before go even resolves the toolchain: GOTOOLCHAIN=local prevents a
+# download when the local toolchain is older than the go.mod minimum; such
+# cases fail with go's explicit version error instead. The gate harness re-
+# pins the same variable for its child steps.
+GOTOOLCHAIN=local
+export GOTOOLCHAIN
+
 exec go run ./tools/gate "$@"
