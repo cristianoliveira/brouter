@@ -14,7 +14,8 @@ The repository has no buildable code or repeatable development baseline.
 A newcomer can build and run a minimal executable with a documented Go toolchain.
 
 ## Acceptance criteria
-- Add go.mod and reproducible dependency/tool version policy; commit go.sum when dependencies exist.
+- Add go.mod using github.com/cristianoliveira/brouter and reproducible dependency/tool version policy; commit go.sum when dependencies exist.
+- Provide a minimal pinned Nix development environment for the Go toolchain and project tools; keep runtime packaging in the platform deliverables.
 - Add a minimal CLI entry point with a tested help/success and invalid-invocation path.
 - Document setup and package boundaries in README, DEVELOPMENT.md, and docs/ARCHITECTURE.md.
 - Keep domain behavior free of OS/process/config dependencies; CLI composition owns wiring.
