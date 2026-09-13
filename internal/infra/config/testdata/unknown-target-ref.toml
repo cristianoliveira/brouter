@@ -1,0 +1,10 @@
+default = "missing-default"
+
+[browsers.personal]
+browser = "chrome"
+
+[[rules]]
+name = "points-nowhere"
+matcher = "exact-host"
+pattern = "a.example"
+target = "missing-target"

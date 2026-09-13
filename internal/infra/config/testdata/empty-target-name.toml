@@ -1,0 +1,4 @@
+default = ""
+
+[browsers.""]
+browser = "chrome"

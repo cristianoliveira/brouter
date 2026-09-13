@@ -88,8 +88,9 @@ Without Nix, use any Go toolchain at or above the minimum declared in
   fails with an explicit version error instead of downloading.
 - No `toolchain` directive in `go.mod`: it would silently download a
   different toolchain instead of using the pinned one.
-- External dependencies: none yet. `go.sum` is committed when the first
-  dependency lands; additions need a stated reason.
+- External dependencies: `github.com/BurntSushi/toml v1.4.0` (config
+  parsing for TASK-0008; the standard-library has no TOML support).
+  `go.sum` is committed; additions need a stated reason and an exact pin.
 - Toolchains below the minimum cannot build or test the module — run
   `nix develop` (failure table below covers the symptom).
 

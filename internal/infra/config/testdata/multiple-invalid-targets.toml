@@ -1,0 +1,10 @@
+default = "good"
+
+[browsers.good]
+browser = "chrome"
+
+[browsers.zzz-bad]
+browser = "mystery"
+
+[browsers.aaa-bad]
+command = "browser --open && rm -rf /"

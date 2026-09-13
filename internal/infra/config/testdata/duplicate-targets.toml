@@ -1,0 +1,7 @@
+default = "personal"
+
+[browsers.personal]
+browser = "chrome"
+
+[browsers.personal]
+browser = "firefox"

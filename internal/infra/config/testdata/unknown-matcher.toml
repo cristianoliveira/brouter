@@ -1,0 +1,10 @@
+default = "personal"
+
+[browsers.personal]
+browser = "chrome"
+
+[[rules]]
+name = "fuzzy"
+matcher = "regex-ish"
+pattern = "a.example"
+target = "personal"
