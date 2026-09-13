@@ -1,7 +1,7 @@
 ---
 id: TASK-0013
 title: Package and install the macOS URL handler
-status: todo
+status: doing
 depends_on: [TASK-0011]
 tags: [macos, packaging]
 ---
