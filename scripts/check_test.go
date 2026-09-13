@@ -233,7 +233,7 @@ func writeRulesFixture(t *testing.T) string {
 
 	fixture := t.TempDir()
 	copyFile(t, filepath.Join("..", ".golangci.yml"), filepath.Join(fixture, ".golangci.yml"))
-	writeFixtureFile(t, fixture, "go.mod", "module fixture\n\ngo 1.24\n")
+	writeFixtureFile(t, fixture, "go.mod", "module fixture\n\ngo 1.27\n")
 	writeFixtureFile(t, fixture, "long.go", longFunctionSource(101))
 	writeFixtureFile(t, fixture, "complex.go", complexFunctionSource(14))
 	writeFixtureFile(t, fixture, "dense.go", denseFunctionSource(90))

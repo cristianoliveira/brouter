@@ -348,7 +348,7 @@ func TestWorkflowGateContract(t *testing.T) {
 	expectOutputContains(t, workflow,
 		"make check",
 		"golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2",
-		"go-version-file: go.mod",
+		"go-version: '1.27.1'",
 	)
 
 	gopathBin := strings.Index(workflow, "GITHUB_PATH")
