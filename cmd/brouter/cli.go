@@ -149,22 +149,16 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 func (c *cli) run(args []string) int {
 	args = normalizeLegacyArgs(args)
 
-	// The pre-migration root switch matched the first help token and
-	// ignored everything after it: a leading --help/-h always prints the
-	// usage text on stdout with exit 0, trailing arguments included.
-	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+	if rootHelpRequested(args) {
 		fmt.Fprint(c.stdout, usage)
 		return exitSuccess
 	}
 	// Unknown leading tokens keep the legacy guidance instead of Cobra's
 	// default wording: same channel, same exit code, same two lines. The
 	// help-flag spellings still route into the tree for the usage text.
-	if len(args) > 0 {
-		first := args[0]
-		if first != "--help" && first != "-h" && !isKnownCommand(first) {
-			fmt.Fprintf(c.stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", first)
-			return exitUsage
-		}
+	if len(args) > 0 && !isKnownCommand(args[0]) {
+		fmt.Fprintf(c.stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
+		return exitUsage
 	}
 
 	// Subcommand help keeps the std-flag channel: guidance on stderr
@@ -209,6 +203,14 @@ func (c *cli) emitLegacyFlagError(ferr *flagError) {
 	fmt.Fprintf(c.stderr, "%s\n", message)
 	fmt.Fprintf(c.stderr, "Usage of %s:\n", ferr.command)
 	fmt.Fprintf(c.stderr, "  -config string\n    \tpath to config.toml (default: per-OS config location)\n")
+}
+
+// rootHelpRequested reports whether the invocation is a root-level help
+// request. The pre-migration root switch matched the first help token
+// and ignored everything after it, including unknown flags and
+// positionals.
+func rootHelpRequested(args []string) bool {
+	return len(args) > 0 && (args[0] == "--help" || args[0] == "-h")
 }
 
 // exitWith records a business exit code (0/1) from a command body. Only
