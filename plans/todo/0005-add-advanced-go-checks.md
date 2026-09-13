@@ -13,7 +13,7 @@ Unit tests alone do not reveal race conditions, vulnerable dependencies, or erod
 Separate runnable commands expose release risks without slowing every normal gate.
 
 ## Acceptance criteria
-- Add separate format-check, static-analysis (go vet and a pinned analyzer), race, coverage, security (govulncheck), and architecture targets.
+- Add separate format-check, static-analysis (`go vet` and any pinned analyzer not already run by the normal gate), race, coverage, security (govulncheck), and architecture targets. Do not duplicate the pinned `golangci-lint` invocation or its `funlen`/`cyclop` rules from TASK-0003.
 - Formatting checks do not mutate source; offer a separate fix command.
 - Enforce a documented coverage budget for routing/config behavior and a no-unexplained-regression rule. Publish coverage per relevant package, not only an aggregate.
 - Enforce domain import boundaries using Go package metadata; permit standard-library dependencies, reject platform/infrastructure imports.
