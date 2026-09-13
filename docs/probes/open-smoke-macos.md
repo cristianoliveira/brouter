@@ -79,12 +79,14 @@ class H(http.server.BaseHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 socketserver.TCPServer(("127.0.0.1", 18081), H).serve_forever()
 EOF
-python3 /tmp/brouter-smoke-recv.py &
+python3 /tmp/brouter-smoke-recv.py & recv_pid=$!
 ```
 
 T1 — cold: fully quit Brave first (`pgrep -a brave` prints nothing).
 The command is wrapped in `timeout 20s` because a cold launch may block
-(platform-dependent):
+(platform-dependent). While it runs, watch Brave's address bar — that
+observation is the user-attested delivery evidence; the fragment
+(`#cold`) only appears there, never in the receipt:
 
 ```sh
 timeout 20s nix develop -c go run ./cmd/brouter open \
@@ -102,6 +104,7 @@ timeout 20s nix develop -c go run ./cmd/brouter open \
   'http://127.0.0.1:18081/direct-warm?case=2#warm'
 echo "warm rc=$?"
 cat /tmp/brouter-smoke-receipts.log
+kill "$recv_pid" 2>/dev/null   # stop the receiver
 ```
 
 Record for each run: rc (including a 124 timeout on T1 — blocking is a
