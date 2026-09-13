@@ -26,6 +26,23 @@ if [ -n "$missing" ]; then
 	exit 1
 fi
 
+# Version drift guard: hooks, watcher, and CI must lint with the same
+# pinned release, or one can pass while another fails. golangci-lint
+# 2.13.2 always enforces its own toolchain choice; nothing is downloaded.
+pinned=2.13.2
+installed=$(golangci-lint version 2>/dev/null | head -n 1)
+case "$installed" in
+*"has version $pinned "*) ;;
+*)
+	echo "false"
+	echo "golangci-lint version mismatch: expected $pinned, found: ${installed:-no version output}"
+	echo "Run the pinned development shell: nix develop"
+	echo "Or install the exact version:"
+	echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$pinned"
+	exit 1
+	;;
+esac
+
 # Pin before go resolves the toolchain: GOTOOLCHAIN=local turns a too-old
 # local toolchain into an explicit version error instead of a download.
 # The fixed locale keeps tool output ordering stable.

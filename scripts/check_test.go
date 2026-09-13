@@ -15,6 +15,10 @@ import (
 
 const noiseLines = 50
 
+// pinnedGolangci is the golangci-lint version the gate enforces; mirrors
+// DEVELOPMENT.md and the CI workflow.
+const pinnedGolangci = "2.13.2"
+
 // writeFake creates a controlled executable directory. Each named tool
 // runs `body` via /bin/sh; calls append their arguments to a per-test
 // calls file so tests can prove which tools ran.
@@ -25,6 +29,14 @@ func writeFake(t *testing.T, dir, name, body string) {
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// fakeGolangci creates a controlled golangci-lint that reports the pinned
+// version and then behaves according to body.
+func fakeGolangci(t *testing.T, dir, body string) {
+	t.Helper()
+
+	writeFake(t, dir, "golangci-lint", `if [ "$1" = "version" ]; then echo "golangci-lint has version `+pinnedGolangci+` built with go1.0"; exit 0; fi;`+body)
 }
 
 func fakeGo(t *testing.T, dir, callsFile string) {
@@ -72,7 +84,7 @@ func TestGateSuccessPrintsExactlyTrue(t *testing.T) {
 	fakeDir := t.TempDir()
 	calls := filepath.Join(t.TempDir(), "calls")
 	fakeGo(t, fakeDir, calls)
-	writeFake(t, fakeDir, "golangci-lint", "exit 0")
+	fakeGolangci(t, fakeDir, "exit 0")
 
 	stdout, log, err := runGate(t, fakeDir)
 
@@ -95,7 +107,7 @@ func TestGatePinsToolchainAndLocaleBeforeSteps(t *testing.T) {
 	fakeDir := t.TempDir()
 	calls := filepath.Join(t.TempDir(), "calls")
 	fakeGo(t, fakeDir, calls)
-	writeFake(t, fakeDir, "golangci-lint", "exit 0")
+	fakeGolangci(t, fakeDir, "exit 0")
 
 	stdout, _, err := runGate(t, fakeDir)
 
@@ -122,7 +134,7 @@ func TestGateLintFailureBoundsDiagnosticsKeepsFullLogAndFailsFast(t *testing.T) 
 	calls := filepath.Join(t.TempDir(), "calls")
 	fakeGo(t, fakeDir, calls)
 	body := "i=1; while [ $i -le " + strconv.Itoa(noiseLines) + " ]; do echo \"noise $i\"; i=$((i+1)); done; exit 3"
-	writeFake(t, fakeDir, "golangci-lint", body)
+	fakeGolangci(t, fakeDir, body)
 
 	stdout, log, err := runGate(t, fakeDir)
 
@@ -166,6 +178,30 @@ func TestGateMissingToolsFailWithActionableGuidance(t *testing.T) {
 	}
 	if _, rerr := os.ReadFile(calls); rerr == nil {
 		t.Error("tools ran despite missing prerequisite")
+	}
+}
+
+func TestGateRefusesUnpinnedGolangciVersion(t *testing.T) {
+	// Given an installed golangci-lint at a different version, when the
+	// gate runs, it refuses with actionable guidance instead of risking
+	// hooks-pass-CI-fails drift.
+	fakeDir := t.TempDir()
+	writeFake(t, fakeDir, "go", "exit 0")
+	writeFake(t, fakeDir, "golangci-lint", `if [ "$1" = "version" ]; then echo "golangci-lint has version 9.9.9 built with go1.0"; exit 0; fi; exit 0`)
+
+	stdout, _, err := runGate(t, fakeDir)
+
+	if err == nil {
+		t.Fatal("gate succeeded with unpinned golangci-lint, want refusal")
+	}
+	if !strings.HasPrefix(stdout, "false\n") {
+		t.Errorf("stdout = %q, want prefix %q", stdout, "false\n")
+	}
+	if !strings.Contains(stdout, "expected "+pinnedGolangci) || !strings.Contains(stdout, "9.9.9") {
+		t.Errorf("stdout = %q, want version mismatch diagnosis", stdout)
+	}
+	if !strings.Contains(stdout, "nix develop") || !strings.Contains(stdout, "go install") {
+		t.Errorf("stdout = %q, want both recovery options", stdout)
 	}
 }
 

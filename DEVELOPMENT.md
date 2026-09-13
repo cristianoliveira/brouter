@@ -43,6 +43,7 @@ fzz                    # watch: reruns make check on gate-relevant changes
 | `golangci-lint` missing | Run `nix develop` (pinned 2.13.2; never install floating versions) |
 | Gate prints `false`, exit nonzero | Read `.tmp/check.log` (full output); fix the first failing step; rerun `make check` |
 | `go: requires go >= X` | Local toolchain older than `go.mod`; update the local toolchain or bump the locked dev shell deliberately |
+| `golangci-lint version mismatch` | Run `nix develop`, or install the exact pin: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2` |
 | commit-msg hook rejects a commit | Rewrite the subject: `<type>(<scope>)?: TASK-XXXX <summary>`; `git commit --amend` for the head commit or `git rebase -i` only on unpushed work |
 | pre-commit/pre-push rejects a push | Run `make check`, read `.tmp/check.log`, fix the failing step |
 | Hook install refuses (existing hooks) | Migrate the named hooks into `.githooks/`, then rerun `make hooks-install` |
@@ -113,6 +114,10 @@ Contract:
   nothing is auto-downloaded. `golangci-lint` is a self-contained pinned
   binary and runs with `GOTOOLCHAIN=local` exported, so neither it nor any
   `go` invocation it spawns can trigger a toolchain download.
+- The gate refuses a golangci-lint whose version differs from the pin
+  (2.13.2): drift is reported with both recovery options (`nix develop`
+  or the exact `go install` command) instead of risking hooks-pass-
+  CI-fails mismatches.
 
 The gate is a POSIX shell script (`scripts/check.sh`) by decision: no Go
 program orchestrates or lints Go. Its behavior is covered by
