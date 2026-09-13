@@ -21,7 +21,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            go
+            go_1_27
             golangci-lint
             gnumake
           ];

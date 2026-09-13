@@ -21,7 +21,7 @@ These defaults unblock implementation while preserving the unresolved decisions 
 - Use `brouter open URL`, `brouter validate`, and `brouter explain URL`; no GUI or always-on daemon unless OS evidence requires one.
 - Accept an explicit config path. The fallback is `$XDG_CONFIG_HOME/brouter/config.toml` on Linux and `~/Library/Application Support/brouter/config.toml` on macOS. Do not merge files or override fields through the environment.
 - Launch failures are visible; there is no silent cross-profile fallback. Do not persist URLs or emit telemetry by default.
-- Pin Go 1.24 during bootstrap. Use macOS 13 (Ventura) arm64 as the provisional deployment floor; TASK-0006 may revise it from real event-integration evidence. No Intel support is claimed.
+- Pin Go 1.27.1 during bootstrap (latest stable at 2026-09-13, go.dev/dl). Use macOS 13 (Ventura) arm64 as the provisional deployment floor; TASK-0006 may revise it from real event-integration evidence. No Intel support is claimed.
 - Prefer a flake package for Linux first. Defer choosing a NixOS module versus Home Manager integration until TASK-0014; Home Manager usage is unknown.
 - Treat optional profiles as desired but provisional for the first usable release. TASK-0012 must prove them or document an explicit deferral; core routing does not wait on profiles.
 - Use conventional commits, portable Make commands, and deterministic tests before logic changes.

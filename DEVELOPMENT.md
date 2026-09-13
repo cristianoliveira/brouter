@@ -76,14 +76,22 @@ Without Nix, use any Go toolchain at or above the minimum declared in
 
 ## Toolchain policy
 
-- `go.mod` declares the minimum supported Go version; do not introduce
-  language or stdlib features beyond it.
-- The dev shell pins the tool actually used day to day and in CI via
-  `flake.lock`. Bump it by updating the lock file deliberately.
+- `go.mod` declares the minimum supported Go version (**1.27**); do not
+  introduce language or stdlib features beyond it.
+- The exact toolchain is pinned at **1.27.1** — the official latest
+  stable at the time Cristian set the direction (go.dev/dl, checked
+  2026-09-13). The dev shell provides it via `go_1_27` from the locked
+  nixpkgs (`flake.lock`); CI pins `go-version: '1.27.1'`. Minimum (what
+  may build the project) and pinned toolchain (what we use day to day)
+  are distinct on purpose.
+- `GOTOOLCHAIN=local` everywhere: a toolchain older than the minimum
+  fails with an explicit version error instead of downloading.
 - No `toolchain` directive in `go.mod`: it would silently download a
   different toolchain instead of using the pinned one.
 - External dependencies: none yet. `go.sum` is committed when the first
   dependency lands; additions need a stated reason.
+- Toolchains below the minimum cannot build or test the module — run
+  `nix develop` (failure table below covers the symptom).
 
 ## Build and test
 
