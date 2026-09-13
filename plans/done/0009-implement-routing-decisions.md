@@ -1,7 +1,7 @@
 ---
 id: TASK-0009
 title: Implement deterministic URL matching and fallback
-status: doing
+status: done
 depends_on: [TASK-0002]
 tags: [domain]
 ---
