@@ -1,0 +1,4 @@
+#!/bin/sh
+# Same normal quality gate as pre-commit, before pushed work leaves the
+# machine. Identical to CI by contract (TASK-0004).
+exec make check

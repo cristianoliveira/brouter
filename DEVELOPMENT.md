@@ -7,11 +7,33 @@ prose-only.
 
 | Policy | Command | Enforcement |
 |---|---|---|
-| One normal gate: lint + type checks + deterministic tests | `make check` | Shell script; hooks, watcher, and CI call the same command (wired in TASK-0004) |
+| One normal gate: lint + type checks + deterministic tests | `make check` | Enforced by versioned hooks (`make hooks-install`), the fzz watcher (`.watch.yaml`), and CI (`.github/workflows/ci.yml`) — all invoke the same command |
+| Conventional commits referencing task IDs | see `.githooks/commit-msg` | Enforced by the versioned commit-msg hook (merge/revert exempt) |
 | Deterministic formatting via gofmt | `gofmt -l ./...` (check), `gofmt -w` (fix) | Separate command; release enforcement in TASK-0005 |
 | Static analysis beyond the pinned lint rules | `go vet ./...` | Separate command; TASK-0005 |
 | Race/coverage/security/architecture budgets | TASK-0005 targets | Separate commands; release enforcement |
-| Conventional commits referencing task IDs | developer discipline + commit-msg hook | Hook enforcement in TASK-0004 |
+
+## Lifecycle: hooks, watcher, CI
+
+One gate command everywhere; nothing competes with it.
+
+```sh
+make hooks-install     # once per clone: core.hooksPath=.githooks
+make hooks-check       # verify installation (prints true / false + guidance)
+make hooks-uninstall   # restore: removes core.hooksPath (nothing was overwritten)
+fzz check              # validate .watch.yaml
+fzz run gate           # run the gate job once
+fzz                    # watch: reruns make check on gate-relevant changes
+```
+
+- pre-commit and pre-push run `make check`; commit-msg enforces
+  `<type>(<scope>)?: TASK-XXXX <summary>` (merge/revert exempt).
+- Install never overwrites: a foreign `core.hooksPath` or active legacy
+  hooks in `.git/hooks` cause a refusal naming what was found.
+- CI (`.github/workflows/ci.yml`) runs `make check` on Linux and macOS
+  with Go from `go.mod` and golangci-lint pinned at 2.13.2 — the same
+  versions as the dev shell. Remote CI evidence is pending until a real
+  push is observed; until then CI is documented, not claimed.
 
 ## Failure modes → recovery
 
@@ -21,6 +43,11 @@ prose-only.
 | `golangci-lint` missing | Run `nix develop` (pinned 2.13.2; never install floating versions) |
 | Gate prints `false`, exit nonzero | Read `.tmp/check.log` (full output); fix the first failing step; rerun `make check` |
 | `go: requires go >= X` | Local toolchain older than `go.mod`; update the local toolchain or bump the locked dev shell deliberately |
+| `golangci-lint version mismatch` | Run `nix develop`, or install the exact pin: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2` |
+| commit-msg hook rejects a commit | Rewrite the subject: `<type>(<scope>)?: TASK-XXXX <summary>`; `git commit --amend` for the head commit or `git rebase -i` only on unpushed work |
+| pre-commit/pre-push rejects a push | Run `make check`, read `.tmp/check.log`, fix the failing step |
+| Hook install refuses (existing hooks) | Migrate the named hooks into `.githooks/`, then rerun `make hooks-install` |
+| Hook uninstall refuses (foreign hooksPath) | The other configuration is preserved; remove it manually only if intended: `git config --unset core.hooksPath` |
 | Gate blocked mid-run | Rerun `make check`; the log is recreated fresh each run |
 
 ## DO NOT
@@ -49,14 +76,22 @@ Without Nix, use any Go toolchain at or above the minimum declared in
 
 ## Toolchain policy
 
-- `go.mod` declares the minimum supported Go version; do not introduce
-  language or stdlib features beyond it.
-- The dev shell pins the tool actually used day to day and in CI via
-  `flake.lock`. Bump it by updating the lock file deliberately.
+- `go.mod` declares the minimum supported Go version (**1.27**); do not
+  introduce language or stdlib features beyond it.
+- The exact toolchain is pinned at **1.27.1** — the official latest
+  stable at the time Cristian set the direction (go.dev/dl, checked
+  2026-09-13). The dev shell provides it via `go_1_27` from the locked
+  nixpkgs (`flake.lock`); CI pins `go-version: '1.27.1'`. Minimum (what
+  may build the project) and pinned toolchain (what we use day to day)
+  are distinct on purpose.
+- `GOTOOLCHAIN=local` everywhere: a toolchain older than the minimum
+  fails with an explicit version error instead of downloading.
 - No `toolchain` directive in `go.mod`: it would silently download a
   different toolchain instead of using the pinned one.
 - External dependencies: none yet. `go.sum` is committed when the first
   dependency lands; additions need a stated reason.
+- Toolchains below the minimum cannot build or test the module — run
+  `nix develop` (failure table below covers the symptom).
 
 ## Build and test
 
@@ -88,6 +123,10 @@ Contract:
   nothing is auto-downloaded. `golangci-lint` is a self-contained pinned
   binary and runs with `GOTOOLCHAIN=local` exported, so neither it nor any
   `go` invocation it spawns can trigger a toolchain download.
+- The gate refuses a golangci-lint whose version differs from the pin
+  (2.13.2): drift is reported with both recovery options (`nix develop`
+  or the exact `go install` command) instead of risking hooks-pass-
+  CI-fails mismatches.
 
 The gate is a POSIX shell script (`scripts/check.sh`) by decision: no Go
 program orchestrates or lints Go. Its behavior is covered by

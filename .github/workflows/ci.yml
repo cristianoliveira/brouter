@@ -1,0 +1,33 @@
+# Normal quality gate for TASK-0004: Linux and macOS run the same command
+# as local hooks and the watcher (`make check`). Tools are pinned: Go from
+# go.mod, golangci-lint at the exact version documented in DEVELOPMENT.md.
+# Remote CI runs are pending until observed on a real push.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Match the local gate: never download a different toolchain.
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Exact official stable chosen by Cristian (go.dev/dl, 2026-09-13).
+          go-version: '1.27.1'
+      - name: Install pinned golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+      - name: Put the pinned linter on PATH for the gate
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: Normal gate (same command as local make check)
+        run: make check

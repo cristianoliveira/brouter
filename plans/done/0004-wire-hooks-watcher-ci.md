@@ -1,7 +1,7 @@
 ---
 id: TASK-0004
 title: Wire hooks watcher and CI to the same quality gate
-status: todo
+status: done
 depends_on: [TASK-0003]
 tags: [guardrails, ci]
 ---

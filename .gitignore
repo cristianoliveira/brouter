@@ -11,6 +11,13 @@ coverage/
 # Local agent reports and scratch space
 /.tmp/
 
+# Watcher control socket (runtime artifact)
+.watch.sock
+
+# The watcher config is versioned guardrails (TASK-0004); re-include it
+# because global gitignores may hide it.
+!.watch.yaml
+
 # Editors
 .idea/
 .vscode/

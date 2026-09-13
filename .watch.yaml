@@ -1,0 +1,21 @@
+## Funzzy watcher configuration (TASK-0004). The watcher runs the same
+## normal gate as hooks and CI: `make check`. Reference: `fzz config schema`.
+## Validate with `fzz check`; run once with `fzz run gate`; watch with `fzz`.
+
+on:
+  socket: .watch.sock
+
+execution:
+  concurrency: 2
+  output: show-on-failure
+
+jobs:
+  - name: gate
+    change:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
+      - "Makefile"
+      - "scripts/check.sh"
+    run: make check
