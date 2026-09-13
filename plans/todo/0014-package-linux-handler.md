@@ -1,7 +1,7 @@
 ---
 id: TASK-0014
 title: Package and install the NixOS desktop handler
-status: todo
+status: doing
 depends_on: [TASK-0011]
 tags: [linux, packaging]
 ---
