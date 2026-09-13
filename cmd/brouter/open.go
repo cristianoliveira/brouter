@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 
@@ -10,25 +9,20 @@ import (
 	"github.com/cristianoliveira/brouter/internal/infra/launch"
 )
 
-// runOpen implements `brouter open URL`: it evaluates the URL with the
-// same domain router as explain, resolves the selected target to a real
-// browser executable, and launches it with the URL as one structured
-// argument. There is no fallback to the system default handler and no
-// silent target switch: every failure is reported and stops the open.
-func runOpen(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("open", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "path to config.toml (default: per-OS config location)")
-	if err := fs.Parse(args); err != nil {
-		return exitUsage
-	}
-
-	rawURL, ok := singleInput("open", fs.Args(), stdin, stderr)
+// runOpen implements the body of `brouter open URL`: it evaluates the
+// URL with the same domain router as explain, resolves the selected
+// target to a real browser executable, and launches it with the URL as
+// one structured argument. There is no fallback to the system default
+// handler and no silent target switch: every failure is reported and
+// stops the open. Flag parsing lives in the Cobra command layer
+// (cli.go); args holds zero or one positional URL.
+func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	rawURL, ok := singleInput("open", args, stdin, stderr)
 	if !ok {
 		return exitUsage
 	}
 
-	path, ok := resolveConfigPath(*configPath, stderr)
+	path, ok := resolveConfigPath(configPath, stderr)
 	if !ok {
 		return exitFailure
 	}

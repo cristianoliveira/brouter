@@ -74,7 +74,7 @@ default = "brave"
 [browsers.brave]
 browser = "brave"
 EOF
-nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
+nix develop -c /tmp/brouter-smoke open --config /tmp/brouter-smoke.toml \
   'https://spike.example/direct-cold'
 ```
 
@@ -87,7 +87,7 @@ Warm run (T2) - in a second terminal, with the same literal config
 path, while Brave remains open:
 
 ```sh
-nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
+nix develop -c /tmp/brouter-smoke open --config /tmp/brouter-smoke.toml \
   'https://spike.example/direct-warm'
 ```
 

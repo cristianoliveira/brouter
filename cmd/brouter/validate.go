@@ -1,29 +1,18 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 
 	"github.com/cristianoliveira/brouter/internal/infra/config"
 )
 
-// runValidate implements `brouter validate`: load the configuration and
-// report health or every validation problem. It never launches anything
-// and never claims a browser is installed.
-func runValidate(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "path to config.toml (default: per-OS config location)")
-	if err := fs.Parse(args); err != nil {
-		return exitUsage
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "validate takes no positional arguments; got %q\n", fs.Arg(0))
-		return exitUsage
-	}
-
-	path, ok := resolveConfigPath(*configPath, stderr)
+// runValidate implements the body of `brouter validate`: load the
+// configuration and report health or every validation problem. It never
+// launches anything and never claims a browser is installed. Flag
+// parsing lives in the Cobra command layer (cli.go).
+func runValidate(configPath string, stdout, stderr io.Writer) int {
+	path, ok := resolveConfigPath(configPath, stderr)
 	if !ok {
 		return exitFailure
 	}

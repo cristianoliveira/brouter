@@ -56,7 +56,7 @@ pattern = "docs.example"
 target = "fake"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://docs.example/page?a=1&b=2")
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://docs.example/page?a=1&b=2")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -80,7 +80,7 @@ func TestOpenFallsBackToTheDefaultTarget(t *testing.T) {
 	browser, log := writeFakeBrowser(t, dir, 0)
 	path := writeConfig(t, executableTargetConfig(browser))
 
-	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://anything.example/")
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "https://anything.example/")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -97,7 +97,7 @@ func TestOpenReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
 	browser, log := writeFakeBrowser(t, dir, 0)
 	path := writeConfig(t, executableTargetConfig(browser))
 
-	code, _, stderr := runCapture(t, "https://stdin.example/x\n", "open", "-config", path)
+	code, _, stderr := runCapture(t, "https://stdin.example/x\n", "open", "--config", path)
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -118,7 +118,7 @@ browser = "brave"
 profile = "Work"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
@@ -137,7 +137,7 @@ func TestOpenFailsVisiblyWhenTheExecutableIsMissing(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-browser")
 	path := writeConfig(t, executableTargetConfig(missing))
 
-	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
@@ -157,7 +157,7 @@ func TestOpenSurfacesBrowserLaunchFailure(t *testing.T) {
 	browser, _ := writeFakeBrowser(t, dir, 3)
 	path := writeConfig(t, executableTargetConfig(browser))
 
-	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
@@ -173,7 +173,7 @@ func TestOpenRejectsRouterAsTarget(t *testing.T) {
 	// binary stands in for the brouter executable.
 	path := writeConfig(t, executableTargetConfig(os.Args[0]))
 
-	code, _, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
@@ -190,7 +190,7 @@ func TestOpenRejectsNonHTTPSchemes(t *testing.T) {
 	browser, log := writeFakeBrowser(t, dir, 0)
 	path := writeConfig(t, executableTargetConfig(browser))
 
-	code, _, stderr := runCapture(t, "", "open", "-config", path, "ftp://example.com/file")
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "ftp://example.com/file")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
@@ -209,7 +209,7 @@ func TestOpenRejectsMultipleURLArguments(t *testing.T) {
 	browser, _ := writeFakeBrowser(t, dir, 0)
 	path := writeConfig(t, executableTargetConfig(browser))
 
-	code, _, _ := runCapture(t, "", "open", "-config", path, "https://a.example/", "https://b.example/")
+	code, _, _ := runCapture(t, "", "open", "--config", path, "https://a.example/", "https://b.example/")
 
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)

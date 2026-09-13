@@ -12,7 +12,7 @@ and launches the selected browser directly. Default-handler integration
 
 ```sh
 brouter open URL        # or: echo URL | brouter open
-brouter open -config path/to/config.toml URL
+brouter open --config path/to/config.toml URL
 ```
 
 Exit codes: 0 launched, 1 validation or launch failure, 2 usage error.

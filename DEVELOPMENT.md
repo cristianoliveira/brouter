@@ -8,8 +8,8 @@ prose-only.
 | Policy | Command | Enforcement |
 |---|---|---|
 | One normal gate: lint + type checks + deterministic tests | `make check` | Enforced by versioned hooks (`make hooks-install`), the fzz watcher (`.watch.yaml`), and CI (`.github/workflows/ci.yml`) — all invoke the same command |
-| Config and route diagnostics | `brouter validate [-config p]`, `brouter explain [-config p] URL` | CLI contract: exit 0 success, 1 validation failure, 2 usage; failures on stderr, reports on stdout; no browser launch, no URL logging |
-| Safe browser launch | `brouter open [-config p] URL` | Same exit-code contract (1 covers launch failure); structured argv, no shell, no default-handler delegation, no silent fallback; profile targets report unsupported until TASK-0012 |
+| Config and route diagnostics | `brouter validate [--config p]`, `brouter explain [--config p] URL` | CLI contract: exit 0 success, 1 validation failure, 2 usage; failures on stderr, reports on stdout; no browser launch, no URL logging |
+| Safe browser launch | `brouter open [--config p] URL` | Same exit-code contract (1 covers launch failure); structured argv, no shell, no default-handler delegation, no silent fallback; profile targets report unsupported until TASK-0012 |
 | Conventional commits referencing task IDs | see `.githooks/commit-msg` | Enforced by the versioned commit-msg hook (merge/revert exempt) |
 | Deterministic formatting via gofmt | `gofmt -l ./...` (check), `gofmt -w` (fix) | Separate command; release enforcement in TASK-0005 |
 | Static analysis beyond the pinned lint rules | `go vet ./...` | Separate command; TASK-0005 |
