@@ -263,3 +263,25 @@ func TestContractLegacyFlagErrorWording(t *testing.T) {
 		})
 	}
 }
+
+func TestContractRootHelpToleratesTrailingArguments(t *testing.T) {
+	// Given the pre-migration root switch matched the first help token,
+	// when a root-level --help/-h carries trailing arguments (even
+	// unknown flags), it still prints usage on stdout with exit 0.
+	for _, args := range [][]string{
+		{"--help", "-bogus"},
+		{"-h", "-bogus"},
+		{"--help", "unexpected"},
+	} {
+		code, stdout, stderr := runCapture(t, "", args...)
+		if code != 0 {
+			t.Errorf("%v: exit code = %d, want 0", args, code)
+		}
+		if !strings.Contains(stdout, "Usage:") {
+			t.Errorf("%v: stdout = %q, want usage text", args, stdout)
+		}
+		if stderr != "" {
+			t.Errorf("%v: stderr = %q, want empty", args, stderr)
+		}
+	}
+}

@@ -149,6 +149,13 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 func (c *cli) run(args []string) int {
 	args = normalizeLegacyArgs(args)
 
+	// The pre-migration root switch matched the first help token and
+	// ignored everything after it: a leading --help/-h always prints the
+	// usage text on stdout with exit 0, trailing arguments included.
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprint(c.stdout, usage)
+		return exitSuccess
+	}
 	// Unknown leading tokens keep the legacy guidance instead of Cobra's
 	// default wording: same channel, same exit code, same two lines. The
 	// help-flag spellings still route into the tree for the usage text.
