@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -146,7 +147,10 @@ type InvalidURLError struct {
 }
 
 func (e *InvalidURLError) Error() string {
-	return fmt.Sprintf("invalid url %q: %s", e.Input, e.Reason)
+	// The raw input is redacted: URLs frequently embed tokens and other
+	// secrets, and error output ends up in logs and CI transcripts. The
+	// reason carries the actionable part (scheme, parse problem).
+	return fmt.Sprintf("invalid url (input redacted): %s", e.Reason)
 }
 
 // Router evaluates URLs against ordered rules with first-match-wins
@@ -189,7 +193,7 @@ func NewRouter(rules []Rule, defaultTarget Target) (*Router, error) {
 func (r *Router) Evaluate(rawURL string) (Decision, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return Decision{}, &InvalidURLError{Input: rawURL, Reason: fmt.Sprintf("malformed url: %v", err)}
+		return Decision{}, &InvalidURLError{Input: rawURL, Reason: fmt.Sprintf("malformed url: %s", sanitizeParseError(err, rawURL))}
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
@@ -233,6 +237,17 @@ func (r *Router) Evaluate(rawURL string) (Decision, error) {
 
 	decision.Target = r.defaultTarget
 	return decision, nil
+}
+
+// sanitizeParseError strips the quoted input that net/url embeds in its
+// parse errors, so raw URLs (which may carry tokens) are never echoed in
+// diagnostics.
+func sanitizeParseError(err error, rawURL string) string {
+	message := err.Error()
+	if rawURL != "" {
+		message = strings.ReplaceAll(message, strconv.Quote(rawURL)+": ", "")
+	}
+	return message
 }
 
 func ruleMatches(rule Rule, host, rawURL string) (bool, string) {

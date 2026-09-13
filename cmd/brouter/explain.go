@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/cristianoliveira/brouter/internal/domain"
@@ -87,6 +88,8 @@ func firstLine(s string) string {
 }
 
 // writeExplain renders the decision as stable, human-readable lines.
+// URL-regex patterns are redacted: they often embed route secrets. Rule
+// names, matcher kinds, and outcomes remain fully explained.
 func writeExplain(stdout io.Writer, decision domain.Decision, cfg *config.Config) {
 	fmt.Fprintf(stdout, "url: %s\n", decision.URL)
 
@@ -108,8 +111,12 @@ func writeExplain(stdout io.Writer, decision domain.Decision, cfg *config.Config
 		if reason.Matched {
 			outcome = "matched"
 		}
-		fmt.Fprintf(stdout, "  %d. %s (%s %q): %s — %s\n",
-			index+1, reason.Rule, reason.Kind, reason.Pattern, outcome, reason.Detail)
+		pattern := strconv.Quote(reason.Pattern)
+		if reason.Kind == domain.URLRegex {
+			pattern = "(pattern redacted)"
+		}
+		fmt.Fprintf(stdout, "  %d. %s (%s %s): %s — %s\n",
+			index+1, reason.Rule, reason.Kind, pattern, outcome, reason.Detail)
 	}
 	for index, name := range decision.Skipped {
 		fmt.Fprintf(stdout, "  skipped %d. %s: not evaluated (an earlier rule matched)\n", index+1, name)

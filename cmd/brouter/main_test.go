@@ -229,7 +229,7 @@ func TestExplainReportsFallbackToDefault(t *testing.T) {
 		"fallback: yes (no rule matched)",
 		"rules evaluated: 2",
 		"1. work (exact-host \"company.example\"): no match",
-		"2. tickets (url-regex \"^https://tickets\"): no match",
+		"2. tickets (url-regex (pattern redacted)): no match",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout missing %q:\n%s", want, stdout)
@@ -375,15 +375,16 @@ func TestExplainReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
 	}
 }
 
-func TestExplainKeepsConfigValiditySeparateFromBrowserAvailability(t *testing.T) {
-	// Given a config referencing a browser that may not be installed,
-	// when validate and explain run, neither claims the browser exists.
+func TestExplainKeepsBrowserAvailabilityOutOfReports(t *testing.T) {
+	// Given a config whose browser may or may not be installed, when
+	// validate and explain run, neither reports availability claims, and
+	// explain explicitly states that no browser was launched.
 	path := writeConfig(t, `
 default = "firefox-zone"
 
 [browsers.firefox-zone]
 browser = "firefox"
-profile = "zzz-not-installed"
+profile = "Work"
 
 [[rules]]
 name = "always"
@@ -392,19 +393,60 @@ pattern = "company.example"
 target = "firefox-zone"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+	code, validateOut, validateErr := runCapture(t, "", "validate", "-config", path)
 	if code != 0 {
-		t.Fatalf("validate exit = %d stderr = %q", code, stderr)
-	}
-	if strings.Contains(strings.ToLower(stdout+stderr), "installed") {
-		t.Errorf("validate claimed browser availability: %q", stdout)
+		t.Fatalf("validate exit = %d stderr = %q", code, validateErr)
 	}
 
-	code, stdout, _ = runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	code, explainOut, explainErr := runCapture(t, "", "explain", "-config", path, "https://company.example/")
 	if code != 0 {
 		t.Fatalf("explain exit = %d", code)
 	}
-	if !strings.Contains(strings.ToLower(stdout), "installed") {
-		t.Errorf("explain claimed browser availability:\n%s", stdout)
+
+	for name, report := range map[string]string{
+		"validate": validateOut + validateErr,
+		"explain":  explainOut + explainErr,
+	} {
+		for _, claim := range []string{"installed", "browser launched", "opening", "is available"} {
+			if strings.Contains(strings.ToLower(report), claim) {
+				t.Errorf("%s claimed browser availability (%q):\n%s", name, claim, report)
+			}
+		}
+	}
+
+	if !strings.Contains(explainOut, "no browser was launched") {
+		t.Errorf("explain must state that no browser was launched:\n%s", explainOut)
+	}
+}
+
+func TestExplainRedactsSensitiveRegexPatterns(t *testing.T) {
+	// Given a url-regex rule whose pattern embeds a secret, when explain
+	// runs, the report explains the outcome without echoing the pattern.
+	path := writeConfig(t, `
+default = "hooks"
+
+[browsers.hooks]
+browser = "chrome"
+
+[[rules]]
+name = "hooked"
+matcher = "url-regex"
+pattern = "^https://hooks\\.example/[?]?token=secret-hunter-42"
+target = "hooks"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://hooks.example/?token=secret-hunter-42")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "hooked") || !strings.Contains(stdout, "matched") {
+		t.Errorf("stdout = %q, want the evaluated rule explained", stdout)
+	}
+	if strings.Contains(stdout, `token=secret-hunter-42(?`) {
+		t.Errorf("stdout = %q, want the config pattern redacted", stdout)
+	}
+	if !strings.Contains(stdout, "(pattern redacted)") {
+		t.Errorf("stdout = %q, want an explicit redaction marker on the rule line", stdout)
 	}
 }
