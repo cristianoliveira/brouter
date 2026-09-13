@@ -1,7 +1,7 @@
 ---
 id: TASK-0006
 title: Prove macOS URL receipt and browser forwarding
-status: doing
+status: done
 depends_on: [TASK-0002]
 priority: high
 tags: [macos, spike]
