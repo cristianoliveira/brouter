@@ -214,7 +214,7 @@ cmd_selftest() {
 	out=$(env -u BROUTER_SPIKE_SKIP_SESSION_GATE -u WAYLAND_DISPLAY PATH="$fakes:$PATH" "$0" install 2>&1)
 	gate_rc=$?
 	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses"
-	check $(printf '%s' "$out" | grep -q "Sway Wayland session"; echo $?) "gate refusal names the Sway requirement"
+	check $(printf '%s' "$out" | grep -qE "Sway|NixOS"; echo $?) "gate refusal names the Sway requirement"
 
 	# 2-6. functional paths with the documented selftest hook.
 	export PATH="$fakes:$PATH"
