@@ -189,3 +189,39 @@ func TestContractFlagsAfterPositionalStayPositional(t *testing.T) {
 		t.Errorf("validate stderr = %q, want the argument named", stderr)
 	}
 }
+
+func TestContractHelpToleratesUnknownFlags(t *testing.T) {
+	// Given the pre-migration help command ignored its arguments, when
+	// invoked with an unknown flag, it still prints usage on stdout with
+	// exit 0 instead of failing on the flag.
+	for _, args := range [][]string{
+		{"help", "--bogus"},
+		{"help", "validate", "--bogus"},
+	} {
+		code, stdout, stderr := runCapture(t, "", args...)
+		if code != 0 {
+			t.Errorf("%v: exit code = %d, want 0", args, code)
+		}
+		if !strings.Contains(stdout, "Usage:") {
+			t.Errorf("%v: stdout = %q, want usage text", args, stdout)
+		}
+		if stderr != "" {
+			t.Errorf("%v: stderr = %q, want empty", args, stderr)
+		}
+	}
+}
+
+func TestContractSubcommandHelpAfterPositionalIsUsageError(t *testing.T) {
+	// Given the std-flag parser stopped at the first positional, when a
+	// help flag follows a positional, it is a positional: the command
+	// rejects the arguments with the usage exit code.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, _, stderr := runCapture(t, "", "validate", "extra", "-h", "-config", path)
+	if code != exitUsage {
+		t.Fatalf("exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "extra") {
+		t.Errorf("stderr = %q, want the positional named", stderr)
+	}
+}

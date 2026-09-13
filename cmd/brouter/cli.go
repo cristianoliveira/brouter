@@ -48,10 +48,11 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 	})
 
 	// The historical help command ignores extra arguments and always
-	// prints the usage text with exit 0.
+	// prints the usage text with exit 0 — including unknown flags.
 	root.SetHelpCommand(&cobra.Command{
-		Use:   "help",
-		Short: "Show this usage text.",
+		Use:                "help",
+		Short:              "Show this usage text.",
+		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprint(c.stdout, usage)
 			return nil
