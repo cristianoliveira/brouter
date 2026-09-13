@@ -1,5 +1,40 @@
 # Development
 
+## Policy → command → enforcement
+
+Every process rule maps to a command and an enforcement point. Nothing is
+prose-only.
+
+| Policy | Command | Enforcement |
+|---|---|---|
+| One normal gate: lint + type checks + deterministic tests | `make check` | Shell script; hooks, watcher, and CI call the same command (wired in TASK-0004) |
+| Deterministic formatting via gofmt | `gofmt -l ./...` (check), `gofmt -w` (fix) | Separate command; release enforcement in TASK-0005 |
+| Static analysis beyond the pinned lint rules | `go vet ./...` | Separate command; TASK-0005 |
+| Race/coverage/security/architecture budgets | TASK-0005 targets | Separate commands; release enforcement |
+| Conventional commits referencing task IDs | developer discipline + commit-msg hook | Hook enforcement in TASK-0004 |
+
+## Failure modes → recovery
+
+| Failure mode | Recovery |
+|---|---|
+| `go` missing from PATH | Install from <https://go.dev/dl/> or run `nix develop` |
+| `golangci-lint` missing | Run `nix develop` (pinned 2.13.2; never install floating versions) |
+| Gate prints `false`, exit nonzero | Read `.tmp/check.log` (full output); fix the first failing step; rerun `make check` |
+| `go: requires go >= X` | Local toolchain older than `go.mod`; update the local toolchain or bump the locked dev shell deliberately |
+| Gate blocked mid-run | Rerun `make check`; the log is recreated fresh each run |
+
+## DO NOT
+
+- Do not add checks to the normal gate (formatting, vet, race, coverage,
+  security, architecture stay separate; TASK-0005 owns them).
+- Do not create competing gates or parallel quality commands.
+- Do not bypass the gate (no `--no-verify` style escapes without an
+  explicit, recorded decision).
+- Do not auto-download tools or toolchains; missing tools fail with
+  guidance.
+- Do not use destructive git operations (rebase/reset/amend on shared
+  branches) unless explicitly requested.
+
 ## Setup
 
 The pinned toolchain comes from the Nix flake; `flake.lock` pins the exact
@@ -44,33 +79,47 @@ Contract:
   complete output of every step.
 - Steps run in pinned order, failing fast: `lint` → `build` → `test`.
 - `test` runs `go test -vet=off ./...`. The implicit vet pass is disabled
-  on purpose: static analysis is a separate concern (TASK-0005), and the
-  gate must stay exactly build+tests regardless of toolchain vet defaults.
-- Toolchain pinning happens in the entry script before `go` resolves the
-  toolchain: `scripts/check.sh` exports `GOTOOLCHAIN=local` (so an older
-  local toolchain fails with an explicit version error instead of
-  downloading), and the harness re-pins the same variable plus `LC_ALL=C`
-  for child steps, keeping output ordering stable.
+  on purpose: go vet is a separate command (TASK-0005), and the gate must
+  stay independent of toolchain vet defaults.
+- The entry script pins `GOTOOLCHAIN=local` before `go` resolves the
+  toolchain (a too-old toolchain fails with an explicit version error
+  instead of downloading) and `LC_ALL=C` for stable output ordering.
+- Missing prerequisites (`go`, `golangci-lint`) fail with setup guidance;
+  nothing is auto-downloaded. `golangci-lint` is a self-contained pinned
+  binary and runs with `GOTOOLCHAIN=local` exported, so neither it nor any
+  `go` invocation it spawns can trigger a toolchain download.
+
+The gate is a POSIX shell script (`scripts/check.sh`) by decision: no Go
+program orchestrates or lints Go. Its behavior is covered by
+controlled-executable tests in `scripts/check_test.go` (fake `go` and
+`golangci-lint` injected via PATH).
 
 Individual targets mirror the gate steps: `make build`, `make test`,
-`make lint`. Formatting, static analysis (go vet), race, coverage,
-security, and architecture checks are separate commands (TASK-0005) and
-must not be added to the gate.
+`make lint`. Formatting, go vet, race, coverage, security, and
+architecture checks are separate commands (TASK-0005) and must not be
+added to the gate.
 
-### Pinned lint rule set (v1, 2026-09-13)
+### Pinned lint rule set
 
-Implemented by `tools/lint` (in-repo, standard library only):
+`golangci-lint` **2.13.2**, provided by the locked Nix development shell
+(pinned transitively via `flake.lock`; bump by updating the lock file
+deliberately). Configuration lives in `.golangci.yml` with `default: none`
+and exactly two enabled linters:
 
-- **L001** — no `fmt.Print`/`fmt.Printf`/`fmt.Println` or builtin
-  `print`/`println` outside `cmd/`, `tools/`, and `_test.go`. Library code
-  must not write to stdout/stderr; printing belongs to CLI composition.
-- **L002** — no empty `interface{}` literals; use `any`.
+- **funlen** — maximum 100 lines per function. golangci-lint 2.13.2
+  always enforces a statement cap and cannot disable it (`statements: 0`
+  is ignored), so the cap is documented and aligned at 100 statements:
+  a function may reach 100 lines or 100 statements. 90 statements across
+  90 lines do not fire; the alignment is proven by
+  `TestPinnedLintRulesFireOnControlledViolations`.
+- **cyclop** — maximum cyclomatic complexity 10 per function, package
+  average 5.0.
 
-New rules require a documented rationale and a version bump of this list.
-
-Missing prerequisites fail with setup guidance (`go` via PATH, POSIX
-shell); nothing is auto-downloaded. The toolchain comes from `nix develop`
-or a local install at or above the `go.mod` minimum.
+Rule semantics are pinned by a controlled fixture test that runs the real
+linter and asserts each documented threshold fires (and nothing else does).
+go vet and staticcheck-grade analyzers are deliberately not enabled here;
+TASK-0005 must not duplicate this invocation. New rules require a
+rationale and an explicit change to `.golangci.yml` plus this document.
 
 ## Conventions
 
@@ -79,3 +128,16 @@ or a local install at or above the `go.mod` minimum.
 - Packages are created when code needs them; no empty scaffolding.
 - Local artifacts (build output, coverage, reports) are git-ignored; source
   fixtures never are. See `.gitignore`.
+
+### Test style
+
+- Prefer descriptive, behavior-oriented subtests: `t.Run("shows usage on
+  stdout", ...)` — subtest names read as specifications.
+- Use table-driven tests for input variations; every row exercises the
+  same behavior contract.
+- Given/When/Then comments where they clarify intent (Given context,
+  When action, Then outcome).
+- Subtest-name quality has **no automated checker**: standard
+  golangci-lint has none, and the pinned configuration deliberately adds
+  no regex or custom analyzer for prose. This convention is enforced by
+  code review only — do not claim automated enforcement for it.

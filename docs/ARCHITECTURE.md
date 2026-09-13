@@ -2,16 +2,24 @@
 
 ## Layout
 
-- `cmd/brouter` — CLI entry point and composition root. Owns process
-  concerns and wiring. Contains no domain routing logic.
-- `internal/domain` — pure routing decisions (config-independent inputs,
-  matching, fallback). Planned for the routing tasks; created when code
-  needs it.
-- `internal/infra` — platform, config, and process adapters (file loading,
-  browser launching). Planned; created when code needs it.
+Folder roles follow the guardrails template (domain / lib / cli / infra /
+fixtures) mapped onto Go conventions; packages are created only when code
+needs them — no empty scaffolding:
 
-- `tools/` — development-only tooling invoked by the gate and by developers;
-  never imported by product code. Standard-library only.
+- `cmd/brouter` — CLI entry point and composition root (cli). Owns
+  process concerns and wiring. Contains no domain routing logic.
+- `internal/domain` — pure routing decisions (domain). Planned for the
+  routing tasks; created when code needs it.
+- `internal/infra` — platform, config, and process adapters (infra).
+  Planned; created when code needs it.
+- Shared helpers (lib) live in `internal/` packages only when a second
+  consumer appears.
+- Test fixtures use colocated `testdata/` directories next to the code
+  under test, never a separate fixtures tree.
+- `scripts/check.sh` — the quality gate entry point (POSIX shell, by
+  decision: no Go program orchestrates or lints Go). Its pinned lint
+  configuration lives in `.golangci.yml`; tests in `scripts/check_test.go`
+  exercise it with controlled executables.
 
 ## Boundary rules
 

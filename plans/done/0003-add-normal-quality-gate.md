@@ -23,5 +23,14 @@ make check provides a deterministic, bounded lint/type-and-test contract.
 ## Verification
 Run focused gate harness tests and one local smoke invocation. Record evidence.
 
+## Tool selection
+Cristian selected `golangci-lint` as the normal-gate lint tool: version
+2.13.2, pinned via the locked Nix development shell, configured with
+funlen (100 lines/statements per function) and cyclop (per-function 10,
+package average 5.0). Repository-owned Go gate/lint tooling was explicitly
+rejected; the gate is POSIX shell orchestration (`scripts/check.sh`). See
+DEVELOPMENT.md for the contract and `scripts/check_test.go` for the
+controlled-executable and rule-semantics tests.
+
 ## Non-goals
 Formatting, coverage, race testing, security scans, or architecture checks inside the normal gate.
