@@ -231,10 +231,38 @@ func validateKnownTarget(spec browserSpec) (TargetDefinition, error) {
 	if !KnownBrowsers[spec.Browser] {
 		return TargetDefinition{}, fmt.Errorf("unknown browser %q (known: brave, chrome, chromium, edge, firefox)", spec.Browser)
 	}
+	if spec.Profile != "" {
+		if err := validateProfileIdentifier(spec.Profile); err != nil {
+			return TargetDefinition{}, err
+		}
+	}
 	def := TargetDefinition{Kind: "known", Browser: spec.Browser}
 	if spec.Profile != "" {
 		def.Profile = spec.Profile
 		def.ProfileSet = true
 	}
 	return def, nil
+}
+
+// validateProfileIdentifier constrains profiles to single directory
+// identifiers inside the browser's user-data dir. Profiles are never
+// free-form paths: separators would traverse outside it, a leading dash
+// could be parsed as a browser flag, and dot names collide with
+// filesystem specials. Display names are deliberately out of scope:
+// users pass the identifier the browser created on disk (documented in
+// the profile task).
+func validateProfileIdentifier(profile string) error {
+	if strings.ContainsAny(profile, `/\`) {
+		return fmt.Errorf("profile %q must be a single directory identifier without path separators", profile)
+	}
+	if strings.HasPrefix(profile, "-") {
+		return fmt.Errorf("profile %q must not start with a dash (it is passed as a browser argument)", profile)
+	}
+	if profile == "." || profile == ".." || strings.Contains(profile, "..") {
+		return fmt.Errorf("profile %q must not contain dot-dot sequences", profile)
+	}
+	if strings.ContainsAny(profile, shellMetacharacters) {
+		return fmt.Errorf("profile %q contains unsupported characters", profile)
+	}
+	return nil
 }
