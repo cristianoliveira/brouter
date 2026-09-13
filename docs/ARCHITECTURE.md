@@ -10,6 +10,9 @@
 - `internal/infra` — platform, config, and process adapters (file loading,
   browser launching). Planned; created when code needs it.
 
+- `tools/` — development-only tooling invoked by the gate and by developers;
+  never imported by product code. Standard-library only.
+
 ## Boundary rules
 
 1. `internal/domain` imports the standard library only — never `cmd/`,

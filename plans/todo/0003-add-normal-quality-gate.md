@@ -1,7 +1,7 @@
 ---
 id: TASK-0003
 title: Add the single Go lint and test gate
-status: todo
+status: doing
 depends_on: [TASK-0002]
 priority: high
 tags: [go, guardrails]
