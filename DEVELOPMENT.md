@@ -160,6 +160,21 @@ go vet and staticcheck-grade analyzers are deliberately not enabled here;
 TASK-0005 must not duplicate this invocation. New rules require a
 rationale and an explicit change to `.golangci.yml` plus this document.
 
+## Advanced checks (manual / release-required)
+
+All outside `make check`. Release requires every line to pass; run them
+anytime manually. Versions are pinned in the Makefile targets themselves.
+
+| Command | Tool (pinned) | Requirement | Recovery when it fails |
+|---|---|---|---|
+| `make fmt-check` | gofmt (toolchain) | release | `make fmt-fix` rewrites |
+| `make vet` | go vet (toolchain) | release | fix the reported code |
+| `make analyze` | staticcheck v0.8.1 (`go run` pin) | release | fix the reported code; upgrade the pin deliberately, never silently |
+| `make race` | race detector (toolchain) | release | fix the reported data race |
+| `make coverage` | go test -cover; floors in `scripts/coverage.budget` | release | add tests; lowering a floor is an explained regression (rationale in the commit) |
+| `make security` | govulncheck v1.8.0 (`go run` pin) | release; needs network for the vulnerability database | a missing network or tool fails visibly — never treat as pass; retry with network |
+| `make architecture` | go list package metadata | release | domain must import the standard library only; move adapters to infra |
+
 ## Conventions
 
 - Tests are colocated with the code they exercise (`*_test.go` next to the

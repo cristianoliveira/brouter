@@ -318,7 +318,11 @@ func copyFile(t *testing.T, src, dst string) {
 func writeFixtureFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+	target := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
