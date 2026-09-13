@@ -14,11 +14,13 @@ toolchain at or above the version in `go.mod`.
 
 ```sh
 nix develop               # pinned toolchain (flake.lock)
+make check                # the one quality gate: prints "true" on success
 go build ./cmd/brouter    # produces ./brouter
 go test ./...             # runs the tests
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain policy and
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the gate contract, the pinned lint
+rule set, and the toolchain policy, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for package boundaries.
 
 ## Supported platforms (planned)

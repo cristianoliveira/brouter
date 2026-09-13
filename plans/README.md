@@ -43,7 +43,7 @@ These open decisions do not block the Go skeleton or isolated domain/config work
 - **Release evidence:** TASK-0015 — end-to-end acceptance and installable artifacts.
 
 ## Guardrail contract to implement
-`make check` is the one normal lint/type-and-test gate. On success stdout is exactly `true`. On failure output begins with `false`, followed by bounded diagnostics, and exit status is nonzero. Hooks, watcher, and CI call this command. Formatting, static analysis, race tests, coverage, security, and architecture checks have explicit separate commands and release enforcement; do not quietly expand the normal gate.
+`make check` is the one normal lint/type-and-test gate. It invokes the pinned `golangci-lint` configuration plus build and tests. The initial lint rules include `funlen` (100 lines per function) and `cyclop` (package average 5.0, per-function maximum 10). On success stdout is exactly `true`. On failure output begins with `false`, followed by bounded diagnostics, and exit status is nonzero. Hooks, watcher, and CI call this command. Formatting, go vet, race tests, coverage, security, and architecture checks have explicit separate commands and release enforcement; do not quietly expand the normal gate.
 
 Use Go's normal conventions: CLI composition under `cmd/brouter`, pure domain decisions under `internal/domain`, platform/config/process adapters under `internal/infra`, and colocated `_test.go` and `testdata` fixtures. Add shared packages only when needed. Document boundaries in `docs/ARCHITECTURE.md`; no empty framework scaffolding.
 
