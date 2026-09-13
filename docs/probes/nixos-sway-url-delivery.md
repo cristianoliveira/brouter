@@ -1,8 +1,8 @@
 # Probe: NixOS + Sway URL delivery — TASK-0007
 
-Status: **target run user-attested; probe tooling QA pending.**
+Status: **user-tested successfully; exact exercised cases not yet specified.**
 
-Run date: 2026-09-13. Cristian reports that this probe worked on a NixOS + Sway target. The observations below record that report; QA of the committed probe remains separate from the platform run. TASK-0007 remains doing until the tooling safety checks clear and the reported scope is confirmed.
+Run date: 2026-09-13. Cristian personally attests that this probe worked on a NixOS + Sway target. The observations below record that report; the exact exercised acceptance cases remain unspecified. Keep the partial profile-selection result explicit when using this evidence.
 
 ## Target
 
@@ -86,15 +86,15 @@ Mako's notification D-Bus API is available. A direct `org.freedesktop.Notificati
 
 | Acceptance item | Result |
 |---|---|
-| Temporary HTTP/HTTPS registration | User-attested; tooling QA pending |
-| OS-delivered receipt | User-attested; tooling QA pending |
-| Actual opener and portal path | User-attested; tooling QA pending |
-| Graphical-session browser resolution | User-attested; tooling QA pending |
-| Brave forwarding, cold and warm | User-attested; tooling QA pending |
-| Sequential URL delivery | User-attested; tooling QA pending |
-| Profile selection | User-attested partial; tooling QA pending |
-| Observable failure channel | User-attested; tooling QA pending |
-| Preserve existing defaults | User-attested; tooling QA pending |
+| Temporary HTTP/HTTPS registration | User-tested; exact case unspecified |
+| OS-delivered receipt | User-tested; exact case unspecified |
+| Actual opener and portal path | User-tested; exact case unspecified |
+| Graphical-session browser resolution | User-tested; exact case unspecified |
+| Brave forwarding, cold and warm | User-tested; exact case unspecified |
+| Sequential URL delivery | User-tested; exact case unspecified |
+| Profile selection | User-tested partial; exact case unspecified |
+| Observable failure channel | User-tested; exact case unspecified |
+| Preserve existing defaults | User-tested; exact case unspecified |
 
 ## Cleanup
 
