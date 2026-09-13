@@ -16,6 +16,20 @@ is filled with observed output from the target machine.
 3. A terminal inside that Sway session, and one other graphical app able
    to open a link (for the external-app click).
 
+## Tool
+
+`scripts/probes/nixos-url-spike.sh` — POSIX shell, self-contained.
+Strict session gate: requires `WAYLAND_DISPLAY` plus an unconditional
+`swaymsg -t get_version` validation — X11, other compositors, and stale
+`SWAYSOCK` values are refused. Opener failures propagate through exit
+status. An existing handler with the spike's ID blocks installation (a
+copy is saved, the file is never overwritten); in `--system` mode an
+install-time safety trap auto-restores a partial failure, and restore
+verifies the persisted before/after handler state (exits nonzero on
+mismatch) and reinstalls any pre-existing desktop file. Receiver logs
+never contain raw argv (argument count only); `selftest` verifies the
+receipt-redaction guarantees on any host.
+
 ## Two modes
 
 | Mode | What it touches | Use |

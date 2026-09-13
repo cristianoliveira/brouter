@@ -8,10 +8,10 @@
 #                      The system default handler is never touched, so
 #                      there is nothing to restore.
 #   --system           OPT-IN: mutates the real mimeapps.list to prove the
-#                      actual default-handler path. Strict backup, EXIT
-#                      trap auto-restore, and persisted before/after
-#                      comparison. Use only when isolated evidence is not
-#                      sufficient.
+#                      actual default-handler path. Strict backup, an
+#                      install-time safety trap (auto-restore on partial
+#                      failure), and verified restore. Use only when
+#                      isolated evidence is not sufficient.
 #
 # Usage:
 #   nixos-url-spike.sh [--system] backup
@@ -19,16 +19,20 @@
 #   nixos-url-spike.sh [--system] probe URL
 #   nixos-url-spike.sh [--system] browser DESKTOP-ID URL
 #   nixos-url-spike.sh [--system] report
-#   nixos-url-spike.sh [--system] restore      # works even if the session died
+#   nixos-url-spike.sh [--system] restore      # session-less; works after a crash
+#   nixos-url-spike.sh selftest                # host-agnostic redaction checks
 #
 # URL secrets are never logged: query strings, fragments, and userinfo are
-# redacted; URLs carrying credentials are rejected outright.
+# redacted; raw argv is not logged at all; credential-bearing URLs are
+# rejected outright. DESKTOP-ID is the desktop file id without the
+# .desktop suffix (e.g. brave-browser).
 set -eu
 
 SPIKE_DIR="${BROUTER_SPIKE_DIR:-$PWD/brouter-spike}"
 HANDLER_ID="brouter-spike-handler"
-SYSTEM_MODE=0
-SHELL_METACHARS_CHECKED=0
+APPLICATIONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+MIMEAPPS="${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list"
+DESKTOP_FILE="$APPLICATIONS_DIR/$HANDLER_ID.desktop"
 
 log() { printf '%s\n' "$*"; }
 die() { printf '%s\n' "refusing: $*" >&2; exit 1; }
@@ -44,19 +48,12 @@ require_nixos_sway() {
 	command -v xdg-mime >/dev/null 2>&1 || die "xdg-mime is required and missing"
 }
 
-# isolated_env redirects XDG state into the workspace: registrations and
-# opener lookups see ONLY the spike handler plus the system desktop files.
-isolated_env() {
-	export XDG_DATA_HOME="$SPIKE_DIR/xdg-data"
-	export XDG_CONFIG_HOME="$SPIKE_DIR/xdg-config"
-	mkdir -p "$XDG_DATA_HOME/applications" "$XDG_CONFIG_HOME"
-}
-
 require_backup() {
 	[ -f "$SPIKE_DIR/mimeapps.list.backup" ] || die "run 'backup' first; system-mode changes require a recorded restore point"
 }
 
 resolve_desktop_file() {
+	id=${1%.desktop}
 	for dir in \
 		"${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
 		"$HOME/.local/share/applications" \
@@ -65,8 +62,8 @@ resolve_desktop_file() {
 		/nix/var/nix/profiles/profile/share/applications \
 		/usr/local/share/applications \
 		/usr/share/applications; do
-		[ -f "$dir/$1.desktop" ] && {
-			echo "$dir/$1.desktop"
+		[ -f "$dir/$id.desktop" ] && {
+			echo "$dir/$id.desktop"
 			return 0
 		}
 	done
@@ -78,7 +75,7 @@ resolve_desktop_file() {
 redact_url() {
 	url=$1
 	case "$url" in
-	*@*) printf 'REDACTED (url contained userinfo credentials)' ; return ;;
+	*@*) printf 'REDACTED (url contained userinfo credentials)'; return ;;
 	esac
 	base=${url%%\?*}
 	base=${base%%\#*}
@@ -90,6 +87,46 @@ reject_secret_urls() {
 	case $1 in
 	*@*) die "url contains userinfo credentials (user:pass@host); remove them before probing" ;;
 	esac
+}
+
+# write_receiver emits the receipt logger. It derives its log file from
+# its own location, so the same code works in the spike workspace and in
+# the selftest sandbox. Raw argv is never written.
+write_receiver() {
+	cat > "$1" <<'RECEIVER'
+#!/bin/sh
+set -eu
+redact() {
+	url=$1
+	case "$url" in *@*) printf 'REDACTED (userinfo credentials in url)'; return ;; esac
+	base=${url%%\?*}
+	base=${base%%\#*}
+	printf '%s (query/fragment redacted; %s bytes, cksum %s)' "$base" "${#url}" \
+		"$(printf '%s' "$url" | cksum 2>/dev/null | cut -d' ' -f1)"
+}
+log_file=$(dirname "$0")/received.log
+{
+	printf 'date=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
+	printf 'url: '
+	redact "$1"
+	printf '\n'
+	printf 'argcount=%s\n' "$#"
+	printf 'WAYLAND_DISPLAY=%s XDG_SESSION_TYPE=%s XDG_CURRENT_DESKTOP=%s\n' \
+		"${WAYLAND_DISPLAY:-}" "${XDG_SESSION_TYPE:-}" "${XDG_CURRENT_DESKTOP:-}"
+	printf 'invoked-by=%s\n' "$(ps -o comm= -p $PPID 2>/dev/null || echo unknown)"
+} >> "$log_file"
+RECEIVER
+	chmod +x "$1"
+}
+
+# install_safety_trap: in --system mode, a partially failed install must
+# not leave a half-registered default handler behind. Cleared on success.
+install_safety_trap() {
+	trap 'restore_state >/dev/null 2>&1 || true' EXIT
+}
+
+clear_install_trap() {
+	trap - EXIT
 }
 
 cmd_backup() {
@@ -117,44 +154,16 @@ cmd_backup() {
 	log "backup complete in $SPIKE_DIR"
 }
 
-write_receiver() {
-	cat > "$SPIKE_DIR/receive.sh" <<RECEIVER
-#!/bin/sh
-set -eu
-redact() {
-	url=\$1
-	case "\$url" in *@*) printf 'REDACTED (userinfo credentials in url)'; return ;; esac
-	base=\${url%%\?*}
-	base=\${base%%\#*}
-	printf '%s (query/fragment redacted; %s bytes, cksum %s)' "\$base" "\${#url}" "\$(printf '%s' "\$url" | cksum 2>/dev/null | cut -d' ' -f1)"
-}
-{
-	printf 'date=%s\n' "\$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
-	printf 'url: '
-	redact "\$1"
-	printf '\n'
-	printf 'argv:'
-	for argument in "\$@"; do
-		printf ' [%s]' "\$(printf '%s' "\$argument" | cut -c1-96)"
-	done
-	printf '\n'
-	printf 'WAYLAND_DISPLAY=%s XDG_SESSION_TYPE=%s XDG_CURRENT_DESKTOP=%s\n' \
-		"\${WAYLAND_DISPLAY:-}" "\${XDG_SESSION_TYPE:-}" "\${XDG_CURRENT_DESKTOP:-}"
-	printf 'invoked-by=%s\n' "\$(ps -o comm= -p \$PPID 2>/dev/null || echo unknown)"
-} >> "$SPIKE_DIR/received.log"
-RECEIVER
-	chmod +x "$SPIKE_DIR/receive.sh"
-}
-
 cmd_install() {
 	require_nixos_sway
 	if [ "$SYSTEM_MODE" = 1 ]; then
 		require_backup
+		install_safety_trap
 	else
 		isolated_env
 	fi
 	mkdir -p "$SPIKE_DIR"
-	write_receiver
+	write_receiver "$SPIKE_DIR/receive.sh"
 
 	if [ "$SYSTEM_MODE" = 1 ]; then
 		if [ -e "$DESKTOP_FILE" ]; then
@@ -183,7 +192,9 @@ DESKTOP
 	xdg-mime default "$HANDLER_ID.desktop" x-scheme-handler/https
 
 	if [ "$SYSTEM_MODE" = 1 ]; then
-		log "system mode: real default handler registered; EXIT trap will restore unless BRROUTER_SPIKE_KEEP=1"
+		clear_install_trap
+		log "system mode: real default handler registered (safety trap cleared on success)"
+		log "uninstall anytime with: $0 --system restore"
 	else
 		log "isolated mode: registrations live only in $SPIKE_DIR/xdg-*; system defaults untouched"
 	fi
@@ -205,7 +216,10 @@ cmd_probe() {
 	url=${1:-}
 	case "$url" in
 	https://* | http://*) reject_secret_urls "$url" ;;
-	*) log "usage: $0 probe https://spike.example/path" >&2; exit 2 ;;
+	*)
+		log "usage: $0 probe https://spike.example/path" >&2
+		exit 2
+		;;
 	esac
 
 	run_opener "$url"
@@ -228,9 +242,13 @@ cmd_browser() {
 	url=${2:-}
 	case "$url" in
 	https://* | http://*) reject_secret_urls "$url" ;;
-	*) log "usage: $0 browser DESKTOP-ID URL" >&2; exit 2 ;;
+	*)
+		log "usage: $0 browser DESKTOP-ID URL" >&2
+		exit 2
+		;;
 	esac
 
+	desktop=${desktop%.desktop}
 	desktop_file=$(resolve_desktop_file "$desktop") ||
 		die "no desktop file found for id '$desktop' in user or system application directories"
 	log "desktop file: $desktop_file"
@@ -267,7 +285,7 @@ cmd_report() {
 				[ -f "$entry" ] || continue
 				if grep -qiE '^(Name|Exec)=.*(brave|chrome|chromium|firefox)' "$entry" 2>/dev/null; then
 					echo "--- $entry"
-					grep -E '^(Exec)=' "$entry"
+					grep -E '^Exec=' "$entry"
 				fi
 			done
 		done
@@ -300,23 +318,26 @@ restore_state() {
 	if [ -f "$SPIKE_DIR/mimeapps.list.absent" ]; then
 		rm -f "$MIMEAPPS"
 		log "restored: removed spike-generated $MIMEAPPS (absent before the spike)"
-	elif [ -s "$SPIKE_DIR/mimeapps.list.backup" ]; then
+	elif [ -f "$SPIKE_DIR/mimeapps.list.backup" ]; then
 		mkdir -p "$(dirname "$MIMEAPPS")"
+		# An empty backup is a real prior state (an empty file) and is
+		# restored as-is, never treated as "nothing to do".
 		cp "$SPIKE_DIR/mimeapps.list.backup" "$MIMEAPPS"
 		log "restored: $MIMEAPPS from backup"
 	fi
 
-	# Persisted before/after comparison: every scheme must match the
-	# recorded backup state, or restore has failed.
 	mismatch=0
-	while read -r scheme expected; do
-		[ -n "$scheme" ] || continue
-		current=$(xdg-mime query default "$scheme" 2>/dev/null || echo none)
-		if [ "$current" != "$expected" ]; then
-			log "RESTORE MISMATCH: $scheme expected '$expected' found '$current'"
-			mismatch=1
-		fi
-	done < "$SPIKE_DIR/handler-state.backup"
+	if [ -f "$SPIKE_DIR/handler-state.backup" ]; then
+		while read -r scheme expected; do
+			[ -n "$scheme" ] || continue
+			case "$scheme" in \#*) continue ;; esac
+			current=$(xdg-mime query default "$scheme" 2>/dev/null || echo none)
+			if [ "$current" != "$expected" ]; then
+				log "RESTORE MISMATCH: $scheme expected '$expected' found '$current'"
+				mismatch=1
+			fi
+		done < "$SPIKE_DIR/handler-state.backup"
+	fi
 	if [ "$mismatch" = 0 ]; then
 		log "restore verified: handler state matches the backup"
 	fi
@@ -328,7 +349,43 @@ cmd_restore() {
 		require_backup
 	fi
 	restore_state
-	log "session-died recovery: restore runs without a graphical session; for manual repair compare $MIMEAPPS against $SPIKE_DIR/mimeapps.list.backup (or delete the generated file per $SPIKE_DIR/mimeapps.list.absent)"
+	log "restore runs without a graphical session. Session-death recovery: rerun this command, or manually compare $MIMEAPPS with $SPIKE_DIR/mimeapps.list.backup (restore the copy, or delete the generated file when $SPIKE_DIR/mimeapps.list.absent exists), and remove $DESKTOP_FILE if it was spike-created."
+}
+
+# selftest runs the receiver-redaction checks on ANY host (no session, no
+# Linux requirement): the exact code that ships must redact secrets and
+# never log raw argv.
+cmd_selftest() {
+	dir=$(mktemp -d)
+	write_receiver "$dir/receive.sh"
+
+	secret="super-secret-token-123"
+	url="https://spike.example/path?token=$secret"
+	"$dir/receive.sh" "$url" "--some-flag"
+
+	fail=0
+	if grep -q "$secret" "$dir/received.log"; then
+		echo "selftest FAIL: secret leaked into received.log"
+		fail=1
+	fi
+	if grep -q "some-flag" "$dir/received.log"; then
+		echo "selftest FAIL: raw argv leaked into received.log"
+		fail=1
+	fi
+	if ! grep -q "query/fragment redacted" "$dir/received.log"; then
+		echo "selftest FAIL: expected the redaction marker"
+		fail=1
+	fi
+	if ! grep -q "argcount=2" "$dir/received.log"; then
+		echo "selftest FAIL: expected argument count without contents"
+		fail=1
+	fi
+
+	rm -rf "$dir"
+	if [ "$fail" = 0 ]; then
+		echo "selftest PASS: receiver redacts secrets; raw argv is never logged"
+	fi
+	exit "$fail"
 }
 
 first=${1:-}
@@ -363,8 +420,11 @@ report)
 restore)
 	cmd_restore
 	;;
+selftest)
+	cmd_selftest
+	;;
 *)
-	log "usage: $0 [--system] {backup|install|probe URL|browser DESKTOP-ID URL|report|restore}" >&2
+	log "usage: $0 [--system] {backup|install|probe URL|browser DESKTOP-ID URL|report|restore|selftest}" >&2
 	exit 2
 	;;
 esac
