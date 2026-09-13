@@ -1,6 +1,7 @@
 // Command brouter routes URLs to the right browser based on a
-// version-controlled configuration. This bootstrap build only exposes
-// help; routing commands arrive with later tasks.
+// version-controlled configuration. This build exposes validate and
+// explain diagnostics; routing and browser launching arrive with later
+// tasks.
 package main
 
 import (
@@ -9,28 +10,56 @@ import (
 	"os"
 )
 
+// Stable exit codes, documented in the usage text and DEVELOPMENT.md.
+const (
+	exitSuccess = 0
+	exitFailure = 1 // invalid config or invalid URL
+	exitUsage   = 2 // unknown command or missing/invalid arguments
+)
+
 const usage = `Usage: brouter [command]
 
-brouter routes URLs to browsers using configurable rules.
+brouter routes URLs to browsers using a config file you own.
 
 Commands:
-  help    Show this usage text.
+  validate            Check the configuration and report problems.
+  explain URL         Show which target a URL routes to and why. Reads the
+                      URL from stdin when the argument is missing.
+  help                Show this usage text.
 
-Run 'brouter help' for this text. Routing commands are not implemented yet.
+Flags:
+  -config path        Use path instead of the default config location.
+
+Exit codes:
+  0 success
+  1 validation failure (invalid config or invalid URL)
+  2 usage error
+
+Run 'brouter help' for this text.
 `
 
 // run is the CLI composition root. It owns wiring and process concerns;
-// it must stay free of domain routing logic.
-func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+// routing decisions live in internal/domain.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
 		fmt.Fprint(stdout, usage)
-		return 0
+		return exitSuccess
 	}
 
-	fmt.Fprintf(stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
-	return 1
+	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Fprint(stdout, usage)
+		return exitSuccess
+	case "validate":
+		return runValidate(args[1:], stdout, stderr)
+	case "explain":
+		return runExplain(args[1:], stdin, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
+		return exitUsage
+	}
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }

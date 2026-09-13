@@ -1,7 +1,7 @@
 ---
 id: TASK-0010
 title: Expose validate and explain diagnostics
-status: todo
+status: done
 depends_on: [TASK-0008, TASK-0009]
 tags: [cli, diagnostics]
 ---

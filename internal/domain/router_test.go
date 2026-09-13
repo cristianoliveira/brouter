@@ -203,7 +203,7 @@ func TestEvaluateRejectsUnsupportedAndMalformedURLs(t *testing.T) {
 		url  string
 		want string
 	}{
-		{name: "ftp is unsupported", url: "ftp://company.example/file", want: `unsupported scheme "ftp"`},
+		{name: "ftp is unsupported", url: "ftp://company.example/file?token=sekret", want: `unsupported scheme "ftp"`},
 		{name: "javascript is unsupported", url: "javascript:alert(1)", want: `unsupported scheme "javascript"`},
 		{name: "file is unsupported", url: "file:///etc/hosts", want: `unsupported scheme "file"`},
 		{name: "empty input is malformed", url: "", want: "malformed"},
@@ -221,6 +221,9 @@ func TestEvaluateRejectsUnsupportedAndMalformedURLs(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+			if tc.url != "" && strings.Contains(err.Error(), tc.url) {
+				t.Errorf("error = %q, want the raw input redacted", err)
 			}
 			var invalid *InvalidURLError
 			if !errors.As(err, &invalid) {
