@@ -38,10 +38,9 @@ validation failures still print to the same log before any launch.
 3. Register it with LaunchServices (makes it eligible as a handler):
    `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/BrouterHandler.app`
 4. Choose it explicitly as the default browser: System Settings →
-   Desktop & Dock → Default web browser → BrouterHandler. The bundle
-   also requests handler status at launch; macOS may ask for
-   confirmation. Selection is explicit: brouter never changes the
-   default silently.
+   Desktop & Dock → Default web browser → BrouterHandler. Selection
+   is manual and explicit: the bundle never requests handler status on
+   its own, and brouter never changes the default silently.
 
 ## Restoration and uninstall
 
