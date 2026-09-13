@@ -198,6 +198,38 @@ func TestLoadRejectsMissingDefault(t *testing.T) {
 	}
 }
 
+func TestLoadAggregatesTargetErrorsDeterministically(t *testing.T) {
+	// Given multiple invalid targets, when loaded repeatedly, the
+	// aggregated errors name them in sorted order every time — map
+	// iteration must not leak nondeterminism into diagnostics.
+	fixture := filepath.Join("testdata", "multiple-invalid-targets.toml")
+
+	var first string
+	for attempt := 0; attempt < 20; attempt++ {
+		_, err := Load(fixture)
+		if err == nil {
+			t.Fatal("Load succeeded with invalid targets")
+		}
+		message := err.Error()
+		if attempt == 0 {
+			first = message
+			continue
+		}
+		if message != first {
+			t.Fatalf("error order is unstable:\nattempt 0: %s\nattempt %d: %s", first, attempt, message)
+		}
+	}
+
+	aaa := strings.Index(first, "aaa-bad")
+	zzz := strings.Index(first, "zzz-bad")
+	if aaa == -1 || zzz == -1 {
+		t.Fatalf("error = %q, want both invalid targets named", first)
+	}
+	if aaa > zzz {
+		t.Errorf("errors not sorted by target name:\n%s", first)
+	}
+}
+
 func TestDefaultPathUsesUserConfigDir(t *testing.T) {
 	// Given the platform user config directory, when the default path is
 	// computed, it is brouter/config.toml beneath it; without a config

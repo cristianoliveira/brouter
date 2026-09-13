@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -122,8 +123,16 @@ func validate(path string, file fileFormat) (*Config, error) {
 		Targets: make(map[string]TargetDefinition, len(file.Browsers)),
 	}
 
-	for name, spec := range file.Browsers {
-		def, err := validateTarget(name, spec)
+	// Sorted names make aggregated diagnostics deterministic regardless of
+	// map iteration order.
+	names := make([]string, 0, len(file.Browsers))
+	for name := range file.Browsers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		def, err := validateTarget(name, file.Browsers[name])
 		if err != nil {
 			errs = append(errs, fail("browsers.\""+name+"\"", "%s", err))
 			continue
