@@ -128,3 +128,16 @@ rationale and an explicit change to `.golangci.yml` plus this document.
 - Packages are created when code needs them; no empty scaffolding.
 - Local artifacts (build output, coverage, reports) are git-ignored; source
   fixtures never are. See `.gitignore`.
+
+### Test style
+
+- Prefer descriptive, behavior-oriented subtests: `t.Run("shows usage on
+  stdout", ...)` — subtest names read as specifications.
+- Use table-driven tests for input variations; every row exercises the
+  same behavior contract.
+- Given/When/Then comments where they clarify intent (Given context,
+  When action, Then outcome).
+- Subtest-name quality has **no automated checker**: standard
+  golangci-lint has none, and the pinned configuration deliberately adds
+  no regex or custom analyzer for prose. This convention is enforced by
+  code review only — do not claim automated enforcement for it.
