@@ -8,6 +8,8 @@
   replaceVars,
   symlinkJoin,
   go_1_27,
+  coreutils,
+  dbus,
   src,
 }:
 let
@@ -38,6 +40,9 @@ symlinkJoin {
     install -Dm755 ${
       replaceVars ../scripts/nixos/brouter-handler-wrapper.sh.in {
         brouter = "${brouter}/bin/brouter";
+        mkdir = "${coreutils}/bin/mkdir";
+        date = "${coreutils}/bin/date";
+        dbus_send = "${dbus}/bin/dbus-send";
       }
     } $out/bin/brouter-handler
 

@@ -23,6 +23,30 @@ func renderTemplate(t *testing.T, template, placeholder, value string) string {
 	return strings.ReplaceAll(string(data), placeholder, value)
 }
 
+// renderWrapper substitutes every placeholder the wrapper template
+// declares, mirroring the flake's replaceVars. Helper binaries resolve
+// to the test host's absolute paths, so the wrapper itself must never
+// depend on PATH.
+func renderWrapper(t *testing.T, template, brouter string) string {
+	t.Helper()
+	rendered := renderTemplate(t, template, "@brouter@", brouter)
+	for placeholder, host := range map[string]string{
+		"@mkdir@":     "mkdir",
+		"@date@":      "date",
+		"@dbus_send@": "dbus-send",
+	} {
+		abs, err := exec.LookPath(host)
+		if err != nil {
+			// Keep the placeholder name: the wrapper treats a missing
+			// helper as an ordinary command failure, which is exactly
+			// the degradation the contract requires.
+			abs = host
+		}
+		rendered = strings.ReplaceAll(rendered, placeholder, abs)
+	}
+	return rendered
+}
+
 func writeRecordingStub(t *testing.T, dir string, exitStatus int) string {
 	t.Helper()
 	stub := filepath.Join(dir, "stub-brouter")
@@ -68,8 +92,8 @@ func TestNixosHandlerWrapperForwardsURLsToEmbeddedBrouter(t *testing.T) {
 	tmp := t.TempDir()
 	stub := writeRecordingStub(t, tmp, 0)
 	wrapper := filepath.Join(tmp, "brouter-handler")
-	if err := os.WriteFile(wrapper, []byte(renderTemplate(t,
-		"nixos/brouter-handler-wrapper.sh.in", "@brouter@", stub)), 0o755); err != nil {
+	if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+		"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -107,8 +131,8 @@ func TestNixosHandlerWrapperResolvesConfigLikeTheCLI(t *testing.T) {
 	tmp := t.TempDir()
 	stub := writeRecordingStub(t, tmp, 0)
 	wrapper := filepath.Join(tmp, "brouter-handler")
-	if err := os.WriteFile(wrapper, []byte(renderTemplate(t,
-		"nixos/brouter-handler-wrapper.sh.in", "@brouter@", stub)), 0o755); err != nil {
+	if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+		"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,8 +155,8 @@ func TestNixosHandlerWrapperSurfacesFailureWithoutTerminal(t *testing.T) {
 	tmp := t.TempDir()
 	stub := writeRecordingStub(t, tmp, 3)
 	wrapper := filepath.Join(tmp, "brouter-handler")
-	if err := os.WriteFile(wrapper, []byte(renderTemplate(t,
-		"nixos/brouter-handler-wrapper.sh.in", "@brouter@", stub)), 0o755); err != nil {
+	if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+		"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,5 +257,53 @@ func assertExecHasNoShellMetacharacters(t *testing.T, execLine string) {
 		if strings.Contains(command, meta) {
 			t.Errorf("Exec = %q contains shell metacharacter %q", execLine, meta)
 		}
+	}
+}
+
+func TestNixosHandlerWrapperWorksWithEmptyPath(t *testing.T) {
+	// Regression: a GUI session may run the handler with an empty or
+	// hostile PATH. Every helper the wrapper needs is pinned to an
+	// absolute path at package build time, so diagnostics must still be
+	// written and the brouter status must still surface.
+	tmp := t.TempDir()
+
+	for name, exitStatus := range map[string]int{"success": 0, "failure": 3} {
+		t.Run(name, func(t *testing.T) {
+			stub := writeRecordingStub(t, tmp, exitStatus)
+			stubLog := filepath.Join(tmp, "stub-argv.log")
+			os.Remove(stubLog)
+			wrapper := filepath.Join(tmp, "brouter-handler-"+name)
+			if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+				"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			home := t.TempDir()
+			env := []string{
+				"PATH=/nonexistent",
+				"HOME=" + home,
+				"XDG_STATE_HOME=" + filepath.Join(home, "state"),
+			}
+			_, status := runWrapper(t, wrapper, env, "https://pathless.example/")
+
+			if status != exitStatus {
+				t.Fatalf("wrapper status = %d, want %d", status, exitStatus)
+			}
+			logPath := filepath.Join(home, "state", "brouter", "handler.log")
+			if exitStatus == 0 {
+				// The stub logged its argv despite the empty PATH.
+				argv := readArgvFile(t, stubLog)
+				if len(argv) != 4 {
+					t.Errorf("stub argv = %q, want the forwarded arguments", argv)
+				}
+				return
+			}
+			log := readFileOrFatal(t, logPath)
+			for _, want := range []string{"brouter diagnostic on stderr", "handler failure (status 3)"} {
+				if !strings.Contains(log, want) {
+					t.Errorf("handler log = %q, want it to contain %q", log, want)
+				}
+			}
+		})
 	}
 }

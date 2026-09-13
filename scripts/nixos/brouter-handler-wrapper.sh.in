@@ -5,12 +5,18 @@
 # the invoking environment. No routing logic lives here or in Nix.
 set -u
 
+# Every helper is pinned at package build time to an absolute store
+# path: a GUI session may run the wrapper with an arbitrary or empty
+# PATH, and diagnostics must never depend on it.
 brouter="@brouter@"
+mkdir_bin="@mkdir@"
+date_bin="@date@"
+dbus_send="@dbus_send@"
 config="${XDG_CONFIG_HOME:-${HOME:-}/.config}/brouter/config.toml"
 state_dir="${XDG_STATE_HOME:-${HOME:-}/.local/state}/brouter"
 log="$state_dir/handler.log"
 
-mkdir -p "$state_dir" 2>/dev/null || log=/dev/null
+"$mkdir_bin" -p "$state_dir" 2>/dev/null || log=/dev/null
 
 # GUI launchers hide stderr and ignore exit status (see TASK-0007
 # evidence), so diagnostics are appended to the state log and failures
@@ -20,8 +26,8 @@ mkdir -p "$state_dir" 2>/dev/null || log=/dev/null
 "$brouter" open --config "$config" "$@" >>"$log" 2>&1
 status=$?
 [ "$status" -eq 0 ] && exit 0
-printf '%s handler failure (status %s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" >>"$log"
-dbus-send --session --dest=org.freedesktop.Notifications --type=method_call \
+printf '%s handler failure (status %s)\n' "$("$date_bin" -u +%Y-%m-%dT%H:%M:%SZ)" "$status" >>"$log"
+"$dbus_send" --session --dest=org.freedesktop.Notifications --type=method_call \
 	/org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
 	string:"brouter" uint32:0 string:"dialog-warning" \
 	string:"brouter handler failed" string:"status $status — see handler.log" \
