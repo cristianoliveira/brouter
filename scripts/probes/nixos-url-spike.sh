@@ -20,6 +20,10 @@
 # (swaymsg -t get_version). URLs are fixed and benign by construction;
 # the receipt logger additionally redacts query/fragment/userinfo and
 # never logs raw argv.
+#
+# Private selftest hook: BROUTER_SPIKE_SKIP_SESSION_GATE=1 bypasses the
+# session gate for the selftest harness only. It is not a user flag,
+# appears in no help text, and real sessions never set it.
 set -eu
 
 SPIKE_DIR="${BROUTER_SPIKE_DIR:-$PWD/brouter-spike}"
