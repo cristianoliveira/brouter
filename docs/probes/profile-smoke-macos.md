@@ -65,17 +65,42 @@ migrates, or renames profiles.
 
 ## Linux/NixOS run (pending, user-attested)
 
-Same three-way attribution on the NixOS+Sway target; user-data root is
-`~/.config/BraveSoftware/Brave-Browser`:
+Minimal frozen protocol against tip 369a7c3. Same Brave profile for
+cold then warm: fully quit Brave (preserve/save your work first), run
+the cold command, observe the profile in the browser UI/profile
+indicator, leave Brave open, then run the warm command. The address
+bar (URL + profile indicator) is the evidence — argv alone is
+insufficient. `spike.example` intentionally does not serve pages.
+
+Use an existing profile directory identifier from
+`~/.config/BraveSoftware/Brave-Browser` (for example `Default`) — not
+the display name. brouter verifies it exists and never creates,
+migrates, or renames profiles; there is no default-profile management.
+
+On this branch (pre-Cobra) the flag spelling is `--config` (std flag
+accepts both spellings); after the Cobra merge it is `--config` only.
 
 ```sh
 go build -o /tmp/b12 ./cmd/brouter
-ls ~/.config/BraveSoftware/Brave-Browser     # pick an existing identifier
+ls ~/.config/BraveSoftware/Brave-Browser        # pick an existing identifier
 printf 'default = "s"\n\n[browsers.s]\nbrowser = "brave"\nprofile = "<ID>"\n' > /tmp/b12.toml
-brouter open --config /tmp/b12.toml 'http://127.0.0.1:18081/profile?case=12'   # with receiver from the TASK-0011 template
-pgrep -a brave | grep profile-directory       # argv proof while it runs
-cat ~/.config/BraveSoftware/Brave-Browser/Local State | grep -o '"last_active_profiles":[^}]*}'
+
+# T1 cold (Brave fully quit):
+nix develop -c /tmp/b12 open --config /tmp/b12.toml \
+  'https://spike.example/profile-cold'
+# observe: URL in address bar + active profile indicator shows <ID>
+
+# T2 warm (Brave left open from T1):
+nix develop -c /tmp/b12 open --config /tmp/b12.toml \
+  'https://spike.example/profile-warm'
+# observe: same checks
+
+# also record the explicit-failure case (no creation):
+printf 'default = "g"\n\n[browsers.g]\nbrowser = "brave"\nprofile = "does-not-exist"\n' > /tmp/b12-missing.toml
+nix develop -c /tmp/b12 open --config /tmp/b12-missing.toml \
+  'https://spike.example/profile-missing'
+# expect: visible refusal naming the path + no-creation policy
 ```
 
-Record: pre-state, rc/blocking, receipt line, argv line, Local State
-profiles. Repeat after quitting Brave for the cold case.
+Record: pre-state (Brave running or not), per-run outcome (URL +
+profile indicator observed, or the failure text), and rc.
