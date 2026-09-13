@@ -79,6 +79,9 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 	}
 	validate.Flags().StringVar(&validateConfig, "config", "",
 		"path to config.toml (default: per-OS config location)")
+	// The pre-migration std-flag parser stopped at the first positional
+	// argument; flags after it were positionals. Keep that contract.
+	validate.Flags().SetInterspersed(false)
 	root.AddCommand(validate)
 
 	explain := &cobra.Command{
@@ -96,6 +99,9 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 	}
 	explain.Flags().StringVar(&explainConfig, "config", "",
 		"path to config.toml (default: per-OS config location)")
+	// The pre-migration std-flag parser stopped at the first positional
+	// argument; flags after it were positionals. Keep that contract.
+	explain.Flags().SetInterspersed(false)
 	root.AddCommand(explain)
 
 	open := &cobra.Command{
@@ -113,6 +119,9 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 	}
 	open.Flags().StringVar(&openConfig, "config", "",
 		"path to config.toml (default: per-OS config location)")
+	// The pre-migration std-flag parser stopped at the first positional
+	// argument; flags after it were positionals. Keep that contract.
+	open.Flags().SetInterspersed(false)
 	root.AddCommand(open)
 
 	c.root = root

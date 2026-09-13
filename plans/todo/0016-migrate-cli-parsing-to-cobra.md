@@ -20,4 +20,3 @@ The CLI parser is growing across commands; migrate parsing and command wiring to
 - [ ] Criterion 2
 
 ## Notes
-

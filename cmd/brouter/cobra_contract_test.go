@@ -157,3 +157,35 @@ func TestContractOpenMultipleURLMessagePreserved(t *testing.T) {
 		t.Errorf("stderr = %q, want the historical guidance", stderr)
 	}
 }
+
+func TestContractFlagsAfterPositionalStayPositional(t *testing.T) {
+	// Given the pre-migration std-flag parser stopped at the first
+	// positional argument, when a flag follows a positional, it is a
+	// positional too: explain and open reject the extras as too many
+	// URLs, and validate names its first extra argument.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, _, stderr := runCapture(t, "", "explain", "https://a.example/", "-config", path)
+	if code != exitUsage {
+		t.Fatalf("explain exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "explain takes exactly one URL argument") {
+		t.Errorf("explain stderr = %q, want the one-URL guidance", stderr)
+	}
+
+	code, _, stderr = runCapture(t, "", "open", "https://a.example/", "-config", path)
+	if code != exitUsage {
+		t.Fatalf("open exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "open takes exactly one URL argument") {
+		t.Errorf("open stderr = %q, want the one-URL guidance", stderr)
+	}
+
+	code, _, stderr = runCapture(t, "", "validate", "extra", "-config", path)
+	if code != exitUsage {
+		t.Fatalf("validate exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "extra") {
+		t.Errorf("validate stderr = %q, want the argument named", stderr)
+	}
+}
