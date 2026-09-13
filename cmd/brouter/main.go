@@ -1,7 +1,7 @@
 // Command brouter routes URLs to the right browser based on a
-// version-controlled configuration. This build exposes validate and
-// explain diagnostics; routing and browser launching arrive with later
-// tasks.
+// version-controlled configuration. The open command resolves a URL to
+// its configured target and launches that browser directly with the URL
+// as one structured argument; validate and explain remain diagnostics.
 package main
 
 import (
@@ -25,6 +25,11 @@ Commands:
   validate            Check the configuration and report problems.
   explain URL         Show which target a URL routes to and why. Reads the
                       URL from stdin when the argument is missing.
+  open URL            Route the URL and launch the selected browser with
+                      it. Reads the URL from stdin when the argument is
+                      missing. Never uses a shell or the system default
+                      handler; failures are reported, never silently
+                      rerouted.
   help                Show this usage text.
 
 Flags:
@@ -54,6 +59,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runValidate(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdin, stdout, stderr)
+	case "open":
+		return runOpen(args[1:], stdin, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
 		return exitUsage
