@@ -32,4 +32,4 @@ hooks-check:
 	@sh scripts/hooks-check.sh
 
 hooks-uninstall:
-	@git config --unset core.hooksPath 2>/dev/null || echo "core.hooksPath was not set"
+	@sh scripts/hooks-uninstall.sh

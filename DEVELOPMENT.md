@@ -47,6 +47,7 @@ fzz                    # watch: reruns make check on gate-relevant changes
 | commit-msg hook rejects a commit | Rewrite the subject: `<type>(<scope>)?: TASK-XXXX <summary>`; `git commit --amend` for the head commit or `git rebase -i` only on unpushed work |
 | pre-commit/pre-push rejects a push | Run `make check`, read `.tmp/check.log`, fix the failing step |
 | Hook install refuses (existing hooks) | Migrate the named hooks into `.githooks/`, then rerun `make hooks-install` |
+| Hook uninstall refuses (foreign hooksPath) | The other configuration is preserved; remove it manually only if intended: `git config --unset core.hooksPath` |
 | Gate blocked mid-run | Rerun `make check`; the log is recreated fresh each run |
 
 ## DO NOT

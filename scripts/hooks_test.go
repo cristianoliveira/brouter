@@ -247,6 +247,18 @@ func TestCommitMsgExemptsMergeCommits(t *testing.T) {
 func TestPreCommitInvokesExactlyMakeCheck(t *testing.T) {
 	// Given the hook runs, it invokes exactly `make check` — nothing else,
 	// proving hooks and CI/watcher share the same gate command.
+	assertHookRunsMakeCheck(t, "pre-commit")
+}
+
+func TestPrePushInvokesExactlyMakeCheck(t *testing.T) {
+	// Given the push hook runs, it invokes exactly `make check` — the same
+	// gate as pre-commit, watcher, and CI.
+	assertHookRunsMakeCheck(t, "pre-push")
+}
+
+func assertHookRunsMakeCheck(t *testing.T, hook string) {
+	t.Helper()
+
 	repo := initRepo(t)
 	copyHookDir(t, repo)
 
@@ -257,18 +269,94 @@ func TestPreCommitInvokesExactlyMakeCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("/bin/sh", mustAbs("../.githooks/pre-commit"))
+	cmd := exec.Command("/bin/sh", mustAbs("../.githooks/"+hook))
 	cmd.Dir = repo
 	cmd.Env = []string{"PATH=" + fakeDir + string(os.PathListSeparator) + os.Getenv("PATH")}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("pre-commit failed: %v: %s", err, out)
+		t.Fatalf("%s failed: %v: %s", hook, err, out)
 	}
 
 	data, err := os.ReadFile(calls)
 	if err != nil {
-		t.Fatal("make was never invoked")
+		t.Fatalf("make was never invoked by %s", hook)
 	}
 	if strings.TrimSpace(string(data)) != "check" {
-		t.Errorf("make invoked with %q, want exactly \"check\"", string(data))
+		t.Errorf("%s invoked make with %q, want exactly \"check\"", hook, string(data))
+	}
+}
+
+func TestHooksUninstallOnlyRemovesItsOwnHooksPath(t *testing.T) {
+	t.Run("uninstalls when managed", func(t *testing.T) {
+		// Given hooks were installed by this repository, when uninstall
+		// runs, core.hooksPath is removed.
+		repo := initRepo(t)
+		copyHookDir(t, repo)
+		if out, err := runIn(repo, mustAbs("../scripts/hooks-install.sh")); err != nil {
+			t.Fatalf("install failed: %v: %s", err, out)
+		}
+
+		out, err := runIn(repo, mustAbs("../scripts/hooks-uninstall.sh"))
+
+		if err != nil {
+			t.Fatalf("uninstall failed: %v: %s", err, out)
+		}
+		if out, cerr := exec.Command("git", "config", "core.hooksPath").CombinedOutput(); cerr == nil {
+			t.Errorf("core.hooksPath still set to %q", out)
+		}
+	})
+
+	t.Run("does nothing when never installed", func(t *testing.T) {
+		// Given hooks were never installed, when uninstall runs, it
+		// reports no-op success instead of failing.
+		repo := initRepo(t)
+
+		if out, err := runIn(repo, mustAbs("../scripts/hooks-uninstall.sh")); err != nil {
+			t.Errorf("uninstall failed on clean repo: %v: %s", err, out)
+		}
+	})
+
+	t.Run("refuses to destroy a foreign hooksPath", func(t *testing.T) {
+		// Given core.hooksPath belongs to something else, when uninstall
+		// runs, it preserves the value and explains the manual removal.
+		repo := initRepo(t)
+		gitIn(t, repo, "config", "core.hooksPath", "my-own-hooks")
+
+		out, err := runIn(repo, mustAbs("../scripts/hooks-uninstall.sh"))
+
+		if err == nil {
+			t.Fatal("uninstall succeeded over foreign hooksPath, want refusal")
+		}
+		if !strings.Contains(out, "my-own-hooks") || !strings.Contains(out, "git config --unset") {
+			t.Errorf("output = %q, want preserved value and manual removal guidance", out)
+		}
+		if got := strings.TrimSpace(gitIn(t, repo, "config", "core.hooksPath")); got != "my-own-hooks" {
+			t.Errorf("core.hooksPath changed to %q, want untouched", got)
+		}
+	})
+}
+
+// TestWorkflowGateContract pins the CI workflow to the guardrails
+// contract: the gate command, the pinned linter, and GOPATH/bin on PATH
+// before the gate runs. Structural, deterministic, no YAML dependencies.
+func TestWorkflowGateContract(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+
+	expectOutputContains(t, workflow,
+		"make check",
+		"golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2",
+		"go-version-file: go.mod",
+	)
+
+	gopathBin := strings.Index(workflow, "GITHUB_PATH")
+	gate := strings.Index(workflow, "run: make check")
+	if gopathBin == -1 || gate == -1 {
+		t.Fatalf("workflow must wire GITHUB_PATH and run make check:\n%s", workflow)
+	}
+	if gopathBin > gate {
+		t.Errorf("GOPATH/bin must be on PATH before the gate runs:\n%s", workflow)
 	}
 }
