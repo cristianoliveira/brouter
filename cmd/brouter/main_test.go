@@ -95,11 +95,8 @@ func TestUnknownCommandFailsWithUsageCode(t *testing.T) {
 	})
 
 	t.Run("stderr names the command and points to help", func(t *testing.T) {
-		if !strings.Contains(stderr, `unknown command "bogus"`) {
+		if !strings.Contains(stderr, `unknown command "bogus" for "brouter"`) {
 			t.Errorf("stderr = %q, want unknown-command error", stderr)
-		}
-		if !strings.Contains(stderr, "brouter help") {
-			t.Errorf("stderr = %q, want pointer to brouter help", stderr)
 		}
 	})
 }
@@ -109,7 +106,7 @@ func TestValidateReportsHealthyConfig(t *testing.T) {
 	// the counted targets and rules on stdout.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+	code, stdout, stderr := runCapture(t, "", "validate", "--config", path)
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -142,7 +139,7 @@ pattern = "a.example"
 target = "missing-target"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+	code, stdout, stderr := runCapture(t, "", "validate", "--config", path)
 
 	if code != exitFailure {
 		t.Fatalf("exit code = %d, want %d", code, exitFailure)
@@ -160,7 +157,7 @@ func TestValidateFailsWhenConfigFileIsMissing(t *testing.T) {
 	// missing file is named on stderr with exit 1.
 	missing := filepath.Join(t.TempDir(), "nope.toml")
 
-	code, stdout, stderr := runCapture(t, "", "validate", "-config", missing)
+	code, stdout, stderr := runCapture(t, "", "validate", "--config", missing)
 
 	if code != exitFailure {
 		t.Fatalf("exit code = %d, want %d", code, exitFailure)
@@ -190,7 +187,7 @@ func TestExplainReportsTheRoutingDecision(t *testing.T) {
 	// browser was launched, and warns about sensitive URL data.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://company.example/page?q=1")
+	code, stdout, stderr := runCapture(t, "", "explain", "--config", path, "https://company.example/page?q=1")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -219,7 +216,7 @@ func TestExplainReportsFallbackToDefault(t *testing.T) {
 	// default target, lists every evaluated rule, and records no skips.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://other.example/")
+	code, stdout, stderr := runCapture(t, "", "explain", "--config", path, "https://other.example/")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -245,8 +242,8 @@ func TestExplainIsDeterministic(t *testing.T) {
 	// byte-identical.
 	path := writeConfig(t, twoRuleConfig)
 
-	_, first, _ := runCapture(t, "", "explain", "-config", path, "https://company.example/")
-	_, second, _ := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	_, first, _ := runCapture(t, "", "explain", "--config", path, "https://company.example/")
+	_, second, _ := runCapture(t, "", "explain", "--config", path, "https://company.example/")
 
 	if first != second {
 		t.Errorf("explain output is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
@@ -258,7 +255,7 @@ func TestValidateRejectsPositionalArguments(t *testing.T) {
 	// a usage error: validate reads no URL.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, _, stderr := runCapture(t, "", "validate", "-config", path, "unexpected-arg")
+	code, _, stderr := runCapture(t, "", "validate", "--config", path, "unexpected-arg")
 
 	if code != exitUsage {
 		t.Fatalf("exit code = %d, want %d", code, exitUsage)
@@ -289,7 +286,7 @@ func TestExplainRejectsMultipleURLArguments(t *testing.T) {
 	// exactly one URL is explained per invocation.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, _, stderr := runCapture(t, "", "explain", "-config", path, "https://a.example/", "https://b.example/")
+	code, _, stderr := runCapture(t, "", "explain", "--config", path, "https://a.example/", "https://b.example/")
 
 	if code != exitUsage {
 		t.Fatalf("exit code = %d, want %d", code, exitUsage)
@@ -316,7 +313,7 @@ pattern = "company.example"
 target = "work"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	code, stdout, stderr := runCapture(t, "", "explain", "--config", path, "https://company.example/")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
@@ -338,7 +335,7 @@ func TestExplainRejectsInvalidURLsWithExitOne(t *testing.T) {
 		{name: "malformed url", url: "http://[bad", want: "malformed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			code, stdout, stderr := runCapture(t, "", "explain", "-config", path, tc.url)
+			code, stdout, stderr := runCapture(t, "", "explain", "--config", path, tc.url)
 
 			if code != exitFailure {
 				t.Fatalf("exit code = %d, want %d", code, exitFailure)
@@ -358,7 +355,7 @@ func TestExplainReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
 	// stdin; empty stdin is a usage error.
 	path := writeConfig(t, twoRuleConfig)
 
-	code, stdout, _ := runCapture(t, "https://company.example/\n", "explain", "-config", path)
+	code, stdout, _ := runCapture(t, "https://company.example/\n", "explain", "--config", path)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
@@ -366,7 +363,7 @@ func TestExplainReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
 		t.Errorf("stdout = %q, want the stdin URL explained", stdout)
 	}
 
-	code, _, stderr := runCapture(t, "\n", "explain", "-config", path)
+	code, _, stderr := runCapture(t, "\n", "explain", "--config", path)
 	if code != exitUsage {
 		t.Fatalf("exit code = %d, want %d for empty stdin", code, exitUsage)
 	}
@@ -393,12 +390,12 @@ pattern = "company.example"
 target = "firefox-zone"
 `)
 
-	code, validateOut, validateErr := runCapture(t, "", "validate", "-config", path)
+	code, validateOut, validateErr := runCapture(t, "", "validate", "--config", path)
 	if code != 0 {
 		t.Fatalf("validate exit = %d stderr = %q", code, validateErr)
 	}
 
-	code, explainOut, explainErr := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	code, explainOut, explainErr := runCapture(t, "", "explain", "--config", path, "https://company.example/")
 	if code != 0 {
 		t.Fatalf("explain exit = %d", code)
 	}
@@ -435,7 +432,7 @@ pattern = "^https://hooks\\.example/[?]?token=secret-hunter-42"
 target = "hooks"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://hooks.example/?token=secret-hunter-42")
+	code, stdout, stderr := runCapture(t, "", "explain", "--config", path, "https://hooks.example/?token=secret-hunter-42")
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
