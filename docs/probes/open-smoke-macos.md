@@ -54,63 +54,46 @@ binaries itself).
 
 ## Linux/NixOS run (pending, user-attested)
 
-Same-target protocol (brave cold → warm), unlike the macOS runs which
-covered different targets (warm Brave, cold Chrome). A local receiver
-provides attributable receipts; the fragment never reaches the server
-(it is client-side), so also note the address bar. `.example` pages do
-not serve — the receipt/address bar is the success signal, not page
-load. No checkout cycle is needed if the tree already sits at the
-reviewed c5707e4 (later commits are docs-only).
+Same-target protocol (brave cold -> warm), unlike the macOS runs which
+covered different targets (warm Brave, cold Chrome). Fixed benign URLs;
+`spike.example` intentionally does not serve pages - success is the
+exact URL (query and fragment) appearing in the browser address bar,
+NOT page load. No timeout and no receiver: if the cold command stays in
+the foreground while Brave runs, that is recorded as UX evidence, not
+treated as failure. Code under test is the reviewed c5707e4 (no new
+checkout needed; later commits are docs-only).
 
-One-time setup — creates the config before any use, then starts the
-receiver (it stays up for both runs):
+Setup - creates the config before any use:
 
 ```sh
 printf 'default = "brave"\n\n[browsers.brave]\nbrowser = "brave"\n' \
   > /tmp/brouter-smoke.toml
-cat > /tmp/brouter-smoke-recv.py <<'EOF'
-import http.server, socketserver
-log = open("/tmp/brouter-smoke-receipts.log", "a", buffering=1)
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        log.write(f"{self.command} {self.path} {self.headers.get('User-Agent','')}\n")
-        self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
-    def log_message(self, *a): pass
-socketserver.TCPServer.allow_reuse_address = True
-socketserver.TCPServer(("127.0.0.1", 18081), H).serve_forever()
-EOF
-python3 /tmp/brouter-smoke-recv.py & recv_pid=$!
 ```
 
-T1 — cold: fully quit Brave first (`pgrep -a brave` prints nothing).
-The command is wrapped in `timeout 20s` because a cold launch may block
-(platform-dependent). While it runs, watch Brave's address bar — that
-observation is the user-attested delivery evidence; the fragment
-(`#cold`) only appears there, never in the receipt:
+T1 - cold: fully quit Brave first (`pgrep -a brave` prints nothing),
+then run in a first terminal. The command may stay in the foreground
+while Brave runs: leave it running and record that behavior - do not
+kill it, and do not quit Brave.
 
 ```sh
-timeout 20s nix develop -c go run ./cmd/brouter open \
-  -config /tmp/brouter-smoke.toml \
-  'http://127.0.0.1:18081/direct-cold?case=1#cold'
-echo "cold rc=$? (124 = timed out while browser ran: blocking, not failure)"
-cat /tmp/brouter-smoke-receipts.log
+nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-cold?case=1#cold'
 ```
 
-T2 — warm: Brave was left open by T1 (no quit in between):
+T2 - warm: in a second terminal, with the same explicit config path and
+Brave left open from T1:
 
 ```sh
-timeout 20s nix develop -c go run ./cmd/brouter open \
-  -config /tmp/brouter-smoke.toml \
-  'http://127.0.0.1:18081/direct-warm?case=2#warm'
-echo "warm rc=$?"
-cat /tmp/brouter-smoke-receipts.log
-kill "$recv_pid" 2>/dev/null   # stop the receiver
+nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-warm?case=2#warm'
 ```
 
-Record for each run: rc (including a 124 timeout on T1 — blocking is a
-platform finding, not a launch failure), the receipt line showing the
-query (`case=1` / `case=2`) delivered by Brave, and the address-bar
-fragment (`#cold` / `#warm`) as user observation. Expected: direct
-launch of the stable Brave executable (`/run/current-system/sw/bin/brave`
-per TASK-0007); warm run reusing the running instance. Do not reuse
-TASK-0007 probe receipts — this is direct-launch evidence.
+Record for each run: whether the command returned (and its rc) or is
+still foreground-blocking (T1 blocking is UX evidence for cold starts),
+and the address-bar observation (`direct-cold?case=1#cold` /
+`direct-warm?case=2#warm` with query and fragment intact). Expected:
+direct launch of the stable Brave executable
+(`/run/current-system/sw/bin/brave` per TASK-0007); warm run reusing
+the running instance and returning promptly. Afterwards T1 may be
+stopped with Ctrl-C; Brave can then be quit normally. Do not reuse
+TASK-0007 probe receipts - this is direct-launch evidence.
