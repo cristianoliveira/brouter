@@ -1,6 +1,8 @@
-# Build output
+# Build outputs
 /brouter
 /cmd/brouter/brouter
+dist/
+result
 
 # macOS handler bundle build output
 dist/
