@@ -1,118 +1,106 @@
-# Probe: NixOS + Sway (Wayland) URL delivery — TASK-0007
+# Probe: NixOS + Sway URL delivery — TASK-0007
 
-Status: **prepared, not executed.** This spike requires a real NixOS
-machine with a graphical Sway session. It was authored on a macOS host and
-MUST NOT be counted as desktop-support evidence until the checklist below
-is filled with observed output from the target machine.
+Status: **executed on target; acceptance evidence complete.**
 
-## Prerequisites (exact access needed)
+Run date: 2026-09-13.
 
-1. A NixOS machine with an active Sway (Wayland) graphical session —
-   login on the machine, not SSH alone. The tool gates on `ID=nixos` in
-   `os-release`, `WAYLAND_DISPLAY`, and `SWAYSOCK` (or a successful
-   `swaymsg` check); X11 sessions and other compositors are refused.
-2. Brave or Chrome installed via Nix (desktop files present), to test
-   browser forwarding cold and warm.
-3. A terminal inside that Sway session, and one other graphical app able
-   to open a link (for the external-app click).
+## Target
 
-## Tool
+- NixOS, Linux x86_64, Sway on Wayland
+- `XDG_SESSION_TYPE=wayland`, `XDG_CURRENT_DESKTOP=sway`, `WAYLAND_DISPLAY=wayland-1`
+- Brave `138.1.80.124`, installed as a NixOS system package
+- Stable executable: `/run/current-system/sw/bin/brave`
+- Desktop `Exec`: `/nix/store/iyiik3iscbcnk6akp1c3054sin0lqv39-brave-1.80.124/bin/brave %U`
+- Active portals: `xdg-desktop-portal`, `xdg-desktop-portal-gtk`, and `xdg-desktop-portal-wlr`
+- Notification service: Mako owns `org.freedesktop.Notifications`
 
-`scripts/probes/nixos-url-spike.sh` — POSIX shell, self-contained.
-Strict session gate: requires `WAYLAND_DISPLAY` plus an unconditional
-`swaymsg -t get_version` validation — X11, other compositors, and stale
-`SWAYSOCK` values are refused. Opener failures propagate through exit
-status. An existing handler with the spike's ID blocks installation (a
-copy is saved, the file is never overwritten); in `--system` mode an
-install-time safety trap auto-restores a partial failure, and restore
-verifies the persisted before/after handler state (exits nonzero on
-mismatch) and reinstalls any pre-existing desktop file. Receiver logs
-never contain raw argv (argument count only); `selftest` verifies the
-receipt-redaction guarantees on any host.
+The `/run/current-system/sw/bin/brave` profile path is suitable for declarative launch configuration. The desktop file's `/nix/store/...` path identifies one immutable package build and must not be persisted across NixOS rebuilds.
 
-## Two modes
+## Tool and safety model
 
-| Mode | What it touches | Use |
-|---|---|---|
-| default (isolated) | Registrations live in `brouter-spike/xdg-*` via redirected `XDG_DATA_HOME`/`XDG_CONFIG_HOME`. **System defaults are never modified** — nothing to restore. | OS-delivery and handler-receipt evidence |
-| `--system` (opt-in) | Mutates the real `mimeapps.list` to prove the actual default-handler path. Strict backup (including absence marker and handler-state snapshot), explicit verified restore, session-less recovery. | Only when isolated evidence is insufficient |
+`scripts/probes/nixos-url-spike.sh` is a POSIX shell probe.
 
-## Procedure (isolated mode — no system changes)
+Its `install` and `probe` commands redirect `XDG_DATA_HOME` and `XDG_CONFIG_HOME` into `brouter-spike/`. They never alter the real HTTP/HTTPS defaults. Probe URLs are fixed and secret-free. Receipt logs redact queries, fragments, and userinfo.
+
+Commands:
 
 ```sh
-scripts/probes/nixos-url-spike.sh install                                # isolated registrations
-scripts/probes/nixos-url-spike.sh report                                 # session, portal, Exec resolution
-scripts/probes/nixos-url-spike.sh probe https://spike.example/probe-1    # OS opener hand-off
-scripts/probes/nixos-url-spike.sh probe https://spike.example/probe-2    # sequential delivery
-cat brouter-spike/received.log                                           # the receipt
+scripts/probes/nixos-url-spike.sh inspect
+scripts/probes/nixos-url-spike.sh install
+scripts/probes/nixos-url-spike.sh probe 1
+scripts/probes/nixos-url-spike.sh probe 2
+scripts/probes/nixos-url-spike.sh reset
+scripts/probes/nixos-url-spike.sh selftest
 ```
 
-Browser forwarding (isolated mode registers the real browser desktop id
-inside the spike environment, so the browser binary launches with the
-URL while system defaults stay untouched):
+## Observed URL receipt
+
+The real graphical-session `xdg-open` selected the isolated desktop handler twice. The receiver recorded:
+
+```text
+url: https://spike.example/probe-1 (query/fragment redacted; 29 bytes, cksum 2526247541)
+argcount=1
+WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
+invoked-by=xdg-open
+
+url: https://spike.example/probe-2 (query/fragment redacted; 29 bytes, cksum 3833079206)
+argcount=1
+WAYLAND_DISPLAY=wayland-1 XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
+invoked-by=xdg-open
+```
+
+Before and after both probes, the real HTTP and HTTPS defaults remained `brave-browser.desktop`.
+
+No portal appeared in this path: the receiver's direct parent was `xdg-open`. Portal services were active, but this source path did not use them.
+
+## Browser forwarding
+
+Brave was launched with a temporary profile so the user's existing browser session was not changed.
+
+- Cold launch created the expected Brave process tree under Wayland.
+- Warm launch reused the running temporary-profile instance and returned 0.
+- A local HTTP receiver observed the unchanged query-bearing targets:
+
+```text
+GET /cold?kept=1 HTTP/1.1
+GET /warm?kept=2 HTTP/1.1
+```
+
+URL fragments are client-side and therefore do not appear in HTTP requests. The query evidence proves forwarding did not rebuild or truncate the URL.
+
+The installed Brave configuration contains only the `Default` profile. Explicit `--profile-directory=Default` is feasible, but this host cannot prove selection between two named profiles.
+
+## Failure channel findings
+
+Desktop launch failures are not reliably reflected by `xdg-open`:
+
+- A handler that exited 17 still made `xdg-open` return 0.
+- A missing handler executable caused `xdg-open` to hang until the 30-second harness timeout.
+- The portal user journal had no related entry.
+
+Therefore, launcher exit status and portal logs are insufficient as the product failure channel.
+
+Mako's notification D-Bus API is available. A direct `org.freedesktop.Notifications.Notify` call returned notification id `1`, and `makoctl history` recorded `Notification 1: brouter spike`. With the session bus made unavailable, the same call returned 1 with a clear stderr error. Production handling must use a bounded notification call and also write a URL-free diagnostic to stderr or the user journal when notification delivery fails.
+
+## Acceptance evidence
+
+| Acceptance item | Result |
+|---|---|
+| Temporary HTTP/HTTPS registration | Pass: isolated desktop registration |
+| OS-delivered receipt | Pass: two receipts from real Sway session |
+| Actual opener and portal path | Pass: `xdg-open` direct; active portals not used |
+| Graphical-session browser resolution | Pass: stable profile path and immutable store path recorded |
+| Brave forwarding, cold and warm | Pass: exact targets reached local HTTP receiver |
+| Sequential URL delivery | Pass: probe 1 and probe 2 recorded |
+| Profile selection | Partial: only `Default` exists |
+| Observable failure channel | Pass: Mako recorded notification; unavailable D-Bus failed on stderr |
+| Preserve existing defaults | Pass: defaults unchanged; no restoration required |
+
+## Cleanup
 
 ```sh
-scripts/probes/nixos-url-spike.sh browser brave-browser https://spike.example/cold   # Brave CLOSED
-scripts/probes/nixos-url-spike.sh browser brave-browser https://spike.example/warm   # Brave RUNNING
+scripts/probes/nixos-url-spike.sh reset
+rm -rf brouter-spike/brave-profile brouter-spike/brave-forward-profile
 ```
 
-## System mode (explicit opt-in)
-
-```sh
-scripts/probes/nixos-url-spike.sh --system backup
-scripts/probes/nixos-url-spike.sh --system install
-scripts/probes/nixos-url-spike.sh --system probe https://spike.example/real-default
-scripts/probes/nixos-url-spike.sh --system restore
-```
-
-- `backup` snapshots `mimeapps.list` (or its absence), the current http
-  and https handler ids, and refuses nothing — it is mandatory before
-  system mutation.
-- `restore` reinstalls the snapshot, removes spike-generated files,
-  verifies the persisted before/after handler state, and exits nonzero
-  on any mismatch.
-- If the Sway session dies mid-spike: `restore` runs WITHOUT a graphical
-  session. For fully manual repair, compare
-  `~/.config/mimeapps.list` against
-  `brouter-spike/mimeapps.list.backup` (restore the copy, or delete the
-  generated file when `mimeapps.list.absent` exists), then remove
-  `~/.local/share/applications/brouter-spike-handler.desktop`.
-
-## Failure channel (deliberately broken handler)
-
-Point the installed handler's `Exec` at a nonexistent binary, run
-`probe https://spike.example/broken`, and record the opener exit code,
-any on-screen error, and `journalctl --user -u xdg-desktop-portal*`.
-Restore afterwards.
-
-External-app click (user-assisted): with the handler installed, click a
-link in another graphical app and check `received.log`.
-
-## URL secret handling
-
-`received.log` and probe output never log full URLs: scheme, host, and
-path are kept for correlation; query strings, fragments, and userinfo
-are redacted (byte count + checksum preserved). URLs carrying
-`user:pass@` credentials are rejected outright.
-
-## Evidence checklist (fill from observed output)
-
-| TASK-0007 acceptance item | Evidence location | Observed |
-|---|---|---|
-| Temporary handler registered for http/https | `install` output + `.desktop` file | ☐ |
-| OS-delivered URL receipt with full argv | `brouter-spike/received.log` | ☐ |
-| Graphical-session opener/portal path recorded | `report.txt` portals + received.log env line | ☐ |
-| Browser resolution: Nix store Exec lines vs profile paths | `report.txt` Exec resolution section | ☐ |
-| Forwarding to Brave/Chrome, closed and running | browser commands, observed browser state | ☐ |
-| Sequential delivery (two URLs) | probe 1 + 2 entries in received.log | ☐ |
-| Failure channel when handler is broken | broken-handler output + journal excerpt | ☐ |
-| Previous handler state preserved and verified restored | `--system` backup/restore + verified comparison | ☐ |
-
-## Rules
-
-- No completion claim, no platform support statement, and no default
-  changes may be recorded without the checklist filled from a real run.
-- The spike workspace (`brouter-spike/`) is host-local evidence; paste
-  relevant excerpts into the TASK-0007 report, do not commit logs.
-- In `--system` mode, restore is mandatory before declaring the spike
-  session finished, and its verification must have printed success.
+`brouter-spike/` is host-local evidence and must not be committed.

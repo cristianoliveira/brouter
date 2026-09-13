@@ -154,8 +154,10 @@ cmd_probe() {
 	index=${1:-}
 	url=$(probe_url "$index") || die "unknown probe index '$index' (use 1 or 2)"
 
+	set +e
 	xdg-open "$url"
 	opener_rc=$?
+	set -e
 	if [ "$opener_rc" -eq 0 ]; then
 		log "opener accepted $url (exit 0) — receipt, not proof: check $SPIKE_DIR/received.log"
 		exit 0
@@ -182,9 +184,9 @@ cmd_help() {
 }
 
 cmd_selftest() {
-	# Host-agnostic controlled harness. Session-gate refusal is tested for
-	# real (this host is not NixOS); install/probe paths run with the
-	# documented selftest hook and fake xdg tools. set +e: failures are
+	# Host-agnostic controlled harness. Session-gate refusal is forced by
+	# removing WAYLAND_DISPLAY; install/probe paths run with the documented
+	# selftest hook and fake xdg tools. set +e: failures are
 	# checked explicitly, never by the shell exiting.
 	set +e
 	run() { "$0" "$@"; }
@@ -193,7 +195,7 @@ cmd_selftest() {
 	mkdir -p "$fakes"
 
 	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %s/xdg-mime.calls\nexit 0\n' "$work" > "$fakes/xdg-mime"
-	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %s/xdg-open.calls\nexit ${XDG_FAKE_OPEN_RC:-0}\n' "$work" > "$fakes/xdg-open"
+	printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> %s/xdg-open.calls\nrc=${XDG_FAKE_OPEN_RC:-0}\n[ "$rc" -ne 0 ] || "$BROUTER_SPIKE_DIR/receive.sh" "$1"\nexit "$rc"\n' "$work" > "$fakes/xdg-open"
 	chmod +x "$fakes/xdg-mime" "$fakes/xdg-open"
 
 	fail=0
@@ -209,51 +211,54 @@ cmd_selftest() {
 	}
 
 	# 1. session gate: install without a Sway session refuses.
-	out=$(env -u BRROUTER_SPIKE_SKIP_SESSION_GATE PATH="$fakes:$PATH" "$0" install 2>&1)
+	out=$(env -u BROUTER_SPIKE_SKIP_SESSION_GATE -u WAYLAND_DISPLAY PATH="$fakes:$PATH" "$0" install 2>&1)
 	gate_rc=$?
 	check $(test "$gate_rc" -ne 0; echo $?) "install without a Sway session refuses"
-	check $(printf '%s' "$out" | grep -qE "Sway|NixOS"; echo $?) "gate refusal names the Sway requirement"
+	check $(printf '%s' "$out" | grep -q "Sway Wayland session"; echo $?) "gate refusal names the Sway requirement"
 
 	# 2-6. functional paths with the documented selftest hook.
-	export BRROUTER_SPIKE_SKIP_SESSION_GATE=1
-	export BRROUTER_SPIKE_DIR="$work/spike"
+	export PATH="$fakes:$PATH"
+	export BROUTER_SPIKE_SKIP_SESSION_GATE=1
+	export BROUTER_SPIKE_DIR="$work/spike"
 	export HOME="$work/home"
 	mkdir -p "$HOME"
 
 	out=$(run install)
 	check "$?" "install succeeds in isolated mode"
-	check $(test -f "$BRROUTER_SPIKE_DIR/receive.sh"; echo $?) "receiver written into workspace"
-	check $(test -f "$BRROUTER_SPIKE_DIR/xdg-data/applications/$HANDLER_ID.desktop"; echo $?) "handler desktop file isolated"
+	check $(test -f "$BROUTER_SPIKE_DIR/receive.sh"; echo $?) "receiver written into workspace"
+	check $(test -f "$BROUTER_SPIKE_DIR/xdg-data/applications/$HANDLER_ID.desktop"; echo $?) "handler desktop file isolated"
 	check $(grep -c "default $HANDLER_ID.desktop" "$work/xdg-mime.calls" | grep -q 2; echo $?) "http and https registered"
 	check $(test ! -e "$HOME/.local/share/applications/$HANDLER_ID.desktop"; echo $?) "real applications dir untouched"
 
 	out=$(run probe 1)
 	check "$?" "probe 1 succeeds with passing opener"
-	check $(grep -q "probe-1" "$BRROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-1"
+	check $(grep -q "probe-1" "$BROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-1"
 
 	out=$(run probe 2)
 	check "$?" "probe 2 succeeds (sequential delivery)"
-	check $(grep -q "probe-2" "$BRROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-2"
+	check $(grep -q "probe-2" "$BROUTER_SPIKE_DIR/received.log"; echo $?) "receipt recorded probe-2"
 
-	XDG_FAKE_OPEN_RC=9 run probe 1
+	export XDG_FAKE_OPEN_RC=9
+	run probe 1
 	probe_rc=$?
+	unset XDG_FAKE_OPEN_RC
 	check $(test "$probe_rc" = 9; echo $?) "probe propagates opener failure exit 9"
 
 	out=$(run reset)
 	reset_rc=$?
 	check "$reset_rc" "reset succeeds"
-	check $(test ! -d "$BRROUTER_SPIKE_DIR/xdg-data"; echo $?) "reset removed isolated registrations"
+	check $(test ! -d "$BROUTER_SPIKE_DIR/xdg-data"; echo $?) "reset removed isolated registrations"
 
 	out=$(run reset)
 	check "$?" "reset is safe when already absent"
 
-	unset BRROUTER_SPIKE_SKIP_SESSION_GATE
+	unset BROUTER_SPIKE_SKIP_SESSION_GATE
 
 	# 7. receiver redaction: secrets never reach the receipt.
 	dir=$(mktemp -d)
 	write_receiver "$dir/receive.sh"
 	"$dir/receive.sh" "https://spike.example/?token=super-secret-123"
-	check $(grep -q "super-secret-123" "$dir/received.log"; echo $?) "receipt redacts url secrets"
+	check $(if grep -q "super-secret-123" "$dir/received.log"; then false; else true; fi; echo $?) "receipt redacts url secrets"
 	check $(grep -q "query/fragment redacted" "$dir/received.log"; echo $?) "receipt marks redaction"
 	rm -rf "$dir"
 
