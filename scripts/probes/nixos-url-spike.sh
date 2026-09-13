@@ -37,10 +37,9 @@ require_nixos_sway() {
 	[ "$(uname -s)" = "Linux" ] || die "this is not Linux; the spike must run on the NixOS target"
 	grep -q '^ID=nixos' /etc/os-release 2>/dev/null || die "host is not NixOS (os-release lacks ID=nixos)"
 	[ -n "${WAYLAND_DISPLAY:-}" ] || die "WAYLAND_DISPLAY is not set; a real Sway Wayland session is required"
-	if [ -z "${SWAYSOCK:-}" ]; then
-		command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_version >/dev/null 2>&1 ||
-			die "no SWAYSOCK and swaymsg validation failed; a real Sway session is required (not X11, not another compositor)"
-	fi
+	command -v swaymsg >/dev/null 2>&1 || die "swaymsg is required to validate the Sway session"
+	swaymsg -t get_version >/dev/null 2>&1 ||
+		die "swaymsg validation failed; a real Sway session is required (not X11, not another compositor)"
 	command -v xdg-open >/dev/null 2>&1 || die "xdg-open is required and missing"
 	command -v xdg-mime >/dev/null 2>&1 || die "xdg-mime is required and missing"
 }
@@ -209,11 +208,12 @@ cmd_probe() {
 	*) log "usage: $0 probe https://spike.example/path" >&2; exit 2 ;;
 	esac
 
-	if run_opener "$url"; then
+	run_opener "$url"
+	opener_rc=$?
+	if [ "$opener_rc" -eq 0 ]; then
 		log "opener accepted the URL (exit 0) — receipt, not proof: check received.log"
 		exit 0
 	fi
-	opener_rc=$?
 	log "opener FAILED (exit $opener_rc) — failure is visible by design; check received.log and portal logs"
 	exit "$opener_rc"
 }
@@ -243,11 +243,12 @@ cmd_browser() {
 	xdg-mime default "$desktop" x-scheme-handler/http
 	xdg-mime default "$desktop" x-scheme-handler/https
 
-	if run_opener "$url"; then
+	run_opener "$url"
+	opener_rc=$?
+	if [ "$opener_rc" -eq 0 ]; then
 		log "handed to $desktop — record whether the browser was COLD or already RUNNING, then repeat for the other state"
 		exit 0
 	fi
-	opener_rc=$?
 	log "opener FAILED (exit $opener_rc) — visible by design"
 	exit "$opener_rc"
 }
