@@ -1,8 +1,8 @@
 # Probe: NixOS + Sway URL delivery — TASK-0007
 
-Status: **target observations reported; independent QA and provenance review pending.**
+Status: **target run user-attested; probe tooling QA pending.**
 
-Run date: 2026-09-13. The observations below are run notes supplied for review, not independently verified by this PR. TASK-0007 remains doing until the committed probe passes safety QA and the target-session evidence is attributable.
+Run date: 2026-09-13. Cristian reports that this probe worked on a NixOS + Sway target. The observations below record that report; QA of the committed probe remains separate from the platform run. TASK-0007 remains doing until the tooling safety checks clear and the reported scope is confirmed.
 
 ## Target
 
@@ -86,15 +86,15 @@ Mako's notification D-Bus API is available. A direct `org.freedesktop.Notificati
 
 | Acceptance item | Result |
 |---|---|
-| Temporary HTTP/HTTPS registration | Reported; QA/provenance pending |
-| OS-delivered receipt | Reported; QA/provenance pending |
-| Actual opener and portal path | Reported; QA/provenance pending |
-| Graphical-session browser resolution | Reported; QA/provenance pending |
-| Brave forwarding, cold and warm | Reported; QA/provenance pending |
-| Sequential URL delivery | Reported; QA/provenance pending |
-| Profile selection | Reported partial; QA/provenance pending |
-| Observable failure channel | Reported; QA/provenance pending |
-| Preserve existing defaults | Reported; QA/provenance pending |
+| Temporary HTTP/HTTPS registration | User-attested; tooling QA pending |
+| OS-delivered receipt | User-attested; tooling QA pending |
+| Actual opener and portal path | User-attested; tooling QA pending |
+| Graphical-session browser resolution | User-attested; tooling QA pending |
+| Brave forwarding, cold and warm | User-attested; tooling QA pending |
+| Sequential URL delivery | User-attested; tooling QA pending |
+| Profile selection | User-attested partial; tooling QA pending |
+| Observable failure channel | User-attested; tooling QA pending |
+| Preserve existing defaults | User-attested; tooling QA pending |
 
 ## Cleanup
 
