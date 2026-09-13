@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"os"
 )
@@ -44,27 +43,10 @@ Run 'brouter help' for this text.
 `
 
 // run is the CLI composition root. It owns wiring and process concerns;
-// routing decisions live in internal/domain.
+// routing decisions live in internal/domain. Parser/wiring is Cobra
+// (cli.go); the observable contract is unchanged.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprint(stdout, usage)
-		return exitSuccess
-	}
-
-	switch args[0] {
-	case "help", "--help", "-h":
-		fmt.Fprint(stdout, usage)
-		return exitSuccess
-	case "validate":
-		return runValidate(args[1:], stdout, stderr)
-	case "explain":
-		return runExplain(args[1:], stdin, stdout, stderr)
-	case "open":
-		return runOpen(args[1:], stdin, stdout, stderr)
-	default:
-		fmt.Fprintf(stderr, "brouter: unknown command %q\nRun 'brouter help' for usage.\n", args[0])
-		return exitUsage
-	}
+	return newCLI(stdin, stdout, stderr).run(args)
 }
 
 func main() {

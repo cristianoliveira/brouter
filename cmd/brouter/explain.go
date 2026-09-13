@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,24 +10,18 @@ import (
 	"github.com/cristianoliveira/brouter/internal/infra/config"
 )
 
-// runExplain implements `brouter explain URL`: it prints the deterministic
-// routing decision for one URL using the same domain evaluation the future
-// open command will use. It never launches a browser and never writes to
-// disk.
-func runExplain(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	configPath := fs.String("config", "", "path to config.toml (default: per-OS config location)")
-	if err := fs.Parse(args); err != nil {
-		return exitUsage
-	}
-
-	rawURL, ok := singleInput("explain", fs.Args(), stdin, stderr)
+// runExplain implements the body of `brouter explain URL`: it prints
+// the deterministic routing decision for one URL using the same domain
+// evaluation the open command uses. It never launches a browser and
+// never writes to disk. Flag parsing lives in the Cobra command layer
+// (cli.go); args holds zero or one positional URL.
+func runExplain(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	rawURL, ok := singleInput("explain", args, stdin, stderr)
 	if !ok {
 		return exitUsage
 	}
 
-	path, ok := resolveConfigPath(*configPath, stderr)
+	path, ok := resolveConfigPath(configPath, stderr)
 	if !ok {
 		return exitFailure
 	}
