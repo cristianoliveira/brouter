@@ -1,7 +1,7 @@
 ---
 id: TASK-0011
 title: Open routed URLs through safe browser launch adapters
-status: doing
+status: done
 depends_on: [TASK-0008, TASK-0009, TASK-0006, TASK-0007]
 tags: [launch]
 ---
