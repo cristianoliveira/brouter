@@ -23,7 +23,7 @@ let
     inherit version;
     inherit src;
     # Pinned module hashes keep the build offline and reproducible.
-    vendorHash = "sha256-hj1rQJED2llW782lPYYWDD1TgNgHPa0z9nUdj4kWryw=";
+    vendorHash = "sha256-auuwDfIhmAyLv8UjVz2eBFUXrRiNmvktifPxRKsEJxY=";
     # Testing is the pinned `make check` gate's job (it needs git, make,
     # and platform probes the sandbox does not carry); the package build
     # verifies compilation.

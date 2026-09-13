@@ -235,24 +235,6 @@ func parseDesktopEntry(t *testing.T, content string) map[string]string {
 	return entry
 }
 
-func readArgvFile(t *testing.T, path string) []string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", path, err)
-	}
-	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-}
-
-func readFileOrFatal(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", path, err)
-	}
-	return string(data)
-}
-
 // assertExecHasNoShellMetacharacters locks safe Exec argument behavior:
 // the desktop launcher must exec arguments directly, never interpret
 // them through a shell.
