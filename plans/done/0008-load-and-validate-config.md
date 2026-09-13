@@ -1,7 +1,7 @@
 ---
 id: TASK-0008
 title: Load and validate portable router configuration
-status: todo
+status: done
 depends_on: [TASK-0002]
 tags: [config]
 ---
