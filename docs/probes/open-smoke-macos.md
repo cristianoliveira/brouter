@@ -55,45 +55,42 @@ binaries itself).
 ## Linux/NixOS run (pending, user-attested)
 
 Same-target protocol (brave cold -> warm), unlike the macOS runs which
-covered different targets (warm Brave, cold Chrome). Fixed benign URLs;
-`spike.example` intentionally does not serve pages - success is the
-exact URL (query and fragment) appearing in the browser address bar,
-NOT page load. No timeout and no receiver: if the cold command stays in
-the foreground while Brave runs, that is recorded as UX evidence, not
-treated as failure. Code under test is the reviewed c5707e4 (no new
-checkout needed; later commits are docs-only).
+covered different targets (warm Brave, cold Chrome). `spike.example`
+intentionally does not serve pages: success is the URL reaching the
+selected browser (visible in the address bar), not page load. If the
+cold command stays in the foreground while Brave runs, record that
+foreground blocking as UX evidence - it is not a failure. Code under
+test is the reviewed c5707e4 (no new checkout needed; later commits are
+docs-only).
 
-Setup - creates the config before any use:
-
-```sh
-printf 'default = "brave"\n\n[browsers.brave]\nbrowser = "brave"\n' \
-  > /tmp/brouter-smoke.toml
-```
-
-T1 - cold: fully quit Brave first (`pgrep -a brave` prints nothing),
-then run in a first terminal. The command may stay in the foreground
-while Brave runs: leave it running and record that behavior - do not
-kill it, and do not quit Brave.
+Setup and cold run (T1) - build once via the pinned toolchain, create
+the config, fully quit Brave (`pgrep -a brave` prints nothing), then:
 
 ```sh
-nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
-  'https://spike.example/direct-cold?case=1#cold'
+nix develop -c go build -o /tmp/brouter-smoke ./cmd/brouter
+cat >/tmp/brouter-smoke.toml <<'EOF'
+default = "brave"
+
+[browsers.brave]
+browser = "brave"
+EOF
+nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-cold'
 ```
 
-T2 - warm: in a second terminal, with the same explicit config path and
-Brave left open from T1:
+Record for T1: whether the command blocked in the foreground or
+returned (and its rc), and whether the URL appeared in Brave's address
+bar. Leave Brave open - do not quit it, and do not kill the T1 command
+until observations are noted (Ctrl-C afterwards).
+
+Warm run (T2) - in a second terminal, with the same literal config
+path, while Brave remains open:
 
 ```sh
-nix develop -c go run ./cmd/brouter open -config /tmp/brouter-smoke.toml \
-  'https://spike.example/direct-warm?case=2#warm'
+nix develop -c /tmp/brouter-smoke open -config /tmp/brouter-smoke.toml \
+  'https://spike.example/direct-warm'
 ```
 
-Record for each run: whether the command returned (and its rc) or is
-still foreground-blocking (T1 blocking is UX evidence for cold starts),
-and the address-bar observation (`direct-cold?case=1#cold` /
-`direct-warm?case=2#warm` with query and fragment intact). Expected:
-direct launch of the stable Brave executable
-(`/run/current-system/sw/bin/brave` per TASK-0007); warm run reusing
-the running instance and returning promptly. Afterwards T1 may be
-stopped with Ctrl-C; Brave can then be quit normally. Do not reuse
-TASK-0007 probe receipts - this is direct-launch evidence.
+Record for T2: rc (expected: prompt exit 0 via running-instance reuse)
+and whether the URL appeared. Do not reuse TASK-0007 probe receipts -
+this is direct-launch evidence.
