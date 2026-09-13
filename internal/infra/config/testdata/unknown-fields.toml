@@ -1,0 +1,6 @@
+default = "personal"
+telemetry = true
+
+[browsers.personal]
+browser = "chrome"
+experimental = "yes"

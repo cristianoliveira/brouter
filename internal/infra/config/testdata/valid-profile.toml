@@ -1,0 +1,20 @@
+default = "brave-work"
+
+[browsers.brave-work]
+browser = "brave"
+profile = "Work"
+
+[browsers.legacy-tool]
+command = "/usr/local/bin/legacy browser"
+
+[[rules]]
+name = "work-hosts"
+matcher = "exact-host"
+pattern = "company.example"
+target = "brave-work"
+
+[[rules]]
+name = "tickets"
+matcher = "url-regex"
+pattern = "^https://tickets\\.internal\\.example/"
+target = "legacy-tool"

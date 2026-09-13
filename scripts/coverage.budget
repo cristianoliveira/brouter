@@ -3,3 +3,4 @@
 # state the rationale. Packages without a line here are reported, not gated.
 github.com/cristianoliveira/brouter/cmd/brouter 80
 github.com/cristianoliveira/brouter/internal/domain 95
+github.com/cristianoliveira/brouter/internal/infra/config 90

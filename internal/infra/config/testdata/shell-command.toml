@@ -1,0 +1,4 @@
+default = "shelled"
+
+[browsers.shelled]
+command = "sh -c 'open http://evil.example'"

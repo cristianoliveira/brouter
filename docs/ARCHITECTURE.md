@@ -43,5 +43,9 @@ needs them — no empty scaffolding:
 `internal/domain` implements the pure routing core: exact-host,
 subdomain, and full-URL-regex matchers with first-match-wins fallback,
 ordered reasons, skipped-rule tracking, and typed invalid-URL errors —
-no filesystem, process, or network access (standard library only). The
-CLI does not consume it yet; wiring arrives with the config/open tasks.
+no filesystem, process, or network access (standard library only).
+`internal/infra/config` loads and validates the portable TOML
+configuration (one documented user location per OS, explicit path
+override, no merging) into pure domain inputs; the domain never sees the
+parser. The CLI does not consume either yet; wiring arrives with the
+open task.

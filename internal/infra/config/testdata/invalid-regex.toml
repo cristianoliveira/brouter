@@ -1,0 +1,10 @@
+default = "personal"
+
+[browsers.personal]
+browser = "chrome"
+
+[[rules]]
+name = "bad-regex"
+matcher = "url-regex"
+pattern = "(?<=x)y"
+target = "personal"
