@@ -1,7 +1,7 @@
 ---
 id: TASK-0005
 title: Add explicit Go safety coverage and architecture checks
-status: doing
+status: done
 depends_on: [TASK-0003]
 tags: [guardrails, security]
 ---
