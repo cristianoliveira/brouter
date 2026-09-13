@@ -15,3 +15,7 @@ linters:
       package-average: 5.0
     funlen:
       lines: 100
+      # golangci-lint 2.13.2 always enforces a statement cap (setting 0
+      # does not disable it), so it is documented and aligned with the
+      # lines cap: a function may reach 100 lines or 100 statements.
+      statements: 100

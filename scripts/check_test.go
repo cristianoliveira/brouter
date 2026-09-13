@@ -4,6 +4,7 @@
 package scripts
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -165,5 +166,123 @@ func TestGateMissingToolsFailWithActionableGuidance(t *testing.T) {
 	}
 	if _, rerr := os.ReadFile(calls); rerr == nil {
 		t.Error("tools ran despite missing prerequisite")
+	}
+}
+
+// TestPinnedLintRulesFireOnControlledViolations proves the documented
+// thresholds behave as documented, using the real pinned golangci-lint on
+// a controlled fixture. It skips (visibly) where the pinned tool is not
+// installed; the gate itself owns the missing-tool contract.
+func TestPinnedLintRulesFireOnControlledViolations(t *testing.T) {
+	if _, err := exec.LookPath("golangci-lint"); err != nil {
+		t.Skip("golangci-lint not on PATH; run inside `nix develop` to prove rule semantics")
+	}
+
+	fixture := writeRulesFixture(t)
+	output := runLinter(t, fixture)
+
+	expectOutputContains(t, output,
+		"funlen",
+		"cyclop",
+		"complexity for function Complex is 15",
+		"average complexity for the package fixture",
+	)
+	expectOutputOmits(t, output, "Dense")
+}
+
+// writeRulesFixture builds a temporary module with one violating file per
+// documented rule plus one clean-but-dense file proving no hidden cap.
+func writeRulesFixture(t *testing.T) string {
+	t.Helper()
+
+	fixture := t.TempDir()
+	copyFile(t, filepath.Join("..", ".golangci.yml"), filepath.Join(fixture, ".golangci.yml"))
+	writeFixtureFile(t, fixture, "go.mod", "module fixture\n\ngo 1.24\n")
+	writeFixtureFile(t, fixture, "long.go", longFunctionSource(101))
+	writeFixtureFile(t, fixture, "complex.go", complexFunctionSource(14))
+	writeFixtureFile(t, fixture, "dense.go", denseFunctionSource(90))
+	return fixture
+}
+
+// longFunctionSource returns a function with n statements spread over
+// more than 100 lines, violating funlen's lines cap only.
+func longFunctionSource(n int) string {
+	var b strings.Builder
+	b.WriteString("package fixture\n\nfunc Long() int {\n\tx := 0\n")
+	for i := 0; i < n; i++ {
+		b.WriteString("\tx++\n")
+	}
+	b.WriteString("\treturn x\n}\n")
+	return b.String()
+}
+
+// complexFunctionSource returns a function with branch count b+1, so
+// complexity b+1 exceeds cyclop's per-function ceiling of 10 and lifts the
+// package average above 5.0.
+func complexFunctionSource(b int) string {
+	var branches strings.Builder
+	for i := 1; i <= b; i++ {
+		branches.WriteString(fmt.Sprintf("\tif x < %d {\n\t\tx += %d\n\t}\n", i, i))
+	}
+	return fmt.Sprintf("package fixture\n\nfunc Complex(x int) int {\n%s\treturn x\n}\n", branches.String())
+}
+
+// denseFunctionSource returns n statements across n lines: below the
+// documented 100 alignment in both dimensions, so nothing may fire.
+func denseFunctionSource(n int) string {
+	var b strings.Builder
+	b.WriteString("package fixture\n\nfunc Dense() int {\n\tx := 0\n")
+	for i := 0; i < n; i++ {
+		b.WriteString("\tx++\n")
+	}
+	b.WriteString("\treturn x\n}\n")
+	return b.String()
+}
+
+func runLinter(t *testing.T, dir string) string {
+	t.Helper()
+
+	cmd := exec.Command("golangci-lint", "run")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected lint failures on fixture, got clean:\n%s", out)
+	}
+	return string(out)
+}
+
+func expectOutputContains(t *testing.T, output string, want ...string) {
+	t.Helper()
+
+	for _, w := range want {
+		if !strings.Contains(output, w) {
+			t.Errorf("lint output missing %q:\n%s", w, output)
+		}
+	}
+}
+
+func expectOutputOmits(t *testing.T, output, forbidden string) {
+	t.Helper()
+
+	if strings.Contains(output, forbidden) {
+		t.Errorf("statement cap fired below the documented 100 alignment:\n%s", output)
+	}
+}
+
+func copyFile(t *testing.T, src, dst string) {
+	t.Helper()
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Dir(dst), filepath.Base(dst), string(data))
+}
+
+func writeFixtureFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -69,10 +69,17 @@ added to the gate.
 deliberately). Configuration lives in `.golangci.yml` with `default: none`
 and exactly two enabled linters:
 
-- **funlen** — maximum 100 lines per function.
+- **funlen** — maximum 100 lines per function. golangci-lint 2.13.2
+  always enforces a statement cap and cannot disable it (`statements: 0`
+  is ignored), so the cap is documented and aligned at 100 statements:
+  a function may reach 100 lines or 100 statements. 90 statements across
+  90 lines do not fire; the alignment is proven by
+  `TestPinnedLintRulesFireOnControlledViolations`.
 - **cyclop** — maximum cyclomatic complexity 10 per function, package
   average 5.0.
 
+Rule semantics are pinned by a controlled fixture test that runs the real
+linter and asserts each documented threshold fires (and nothing else does).
 go vet and staticcheck-grade analyzers are deliberately not enabled here;
 TASK-0005 must not duplicate this invocation. New rules require a
 rationale and an explicit change to `.golangci.yml` plus this document.
