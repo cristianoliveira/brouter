@@ -2,15 +2,48 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func runCapture(t *testing.T, args ...string) (int, string, string) {
+// writeConfig writes a config file and returns its path. Configs in tests
+// are inline so each case owns its exact bytes.
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const twoRuleConfig = `
+default = "personal"
+
+[browsers.personal]
+browser = "chrome"
+
+[[rules]]
+name = "work"
+matcher = "exact-host"
+pattern = "company.example"
+target = "personal"
+
+[[rules]]
+name = "tickets"
+matcher = "url-regex"
+pattern = "^https://tickets"
+target = "personal"
+`
+
+func runCapture(t *testing.T, stdin string, args ...string) (int, string, string) {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr)
+	code := run(args, strings.NewReader(stdin), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -29,7 +62,7 @@ func TestHelpInvocationShowsUsage(t *testing.T) {
 
 	for _, path := range helpPaths {
 		t.Run(path.name, func(t *testing.T) {
-			code, stdout, stderr := runCapture(t, path.args...)
+			code, stdout, stderr := runCapture(t, "", path.args...)
 
 			if code != 0 {
 				t.Errorf("exit code = %d, want 0", code)
@@ -44,14 +77,14 @@ func TestHelpInvocationShowsUsage(t *testing.T) {
 	}
 }
 
-func TestUnknownCommandFailsWithGuidance(t *testing.T) {
-	// Given an unimplemented command name, when the CLI runs, it fails
-	// visibly and points to help instead of failing silently.
-	code, stdout, stderr := runCapture(t, "bogus")
+func TestUnknownCommandFailsWithUsageCode(t *testing.T) {
+	// Given an unrecognized command name, when the CLI runs, it exits with
+	// the usage code and points to help instead of failing silently.
+	code, stdout, stderr := runCapture(t, "", "bogus")
 
-	t.Run("exit code is nonzero", func(t *testing.T) {
-		if code == 0 {
-			t.Errorf("exit code = 0, want nonzero")
+	t.Run("exit code is the usage code", func(t *testing.T) {
+		if code != exitUsage {
+			t.Errorf("exit code = %d, want %d", code, exitUsage)
 		}
 	})
 
@@ -69,4 +102,309 @@ func TestUnknownCommandFailsWithGuidance(t *testing.T) {
 			t.Errorf("stderr = %q, want pointer to brouter help", stderr)
 		}
 	})
+}
+
+func TestValidateReportsHealthyConfig(t *testing.T) {
+	// Given a valid config, when validate runs, it succeeds and reports
+	// the counted targets and rules on stdout.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "config OK") {
+		t.Errorf("stdout = %q, want a config OK report", stdout)
+	}
+	if !strings.Contains(stdout, "targets 1") || !strings.Contains(stdout, "rules 2") {
+		t.Errorf("stdout = %q, want counted targets and rules", stdout)
+	}
+	if !strings.Contains(stdout, `default "personal"`) {
+		t.Errorf("stdout = %q, want the default target", stdout)
+	}
+}
+
+func TestValidateFailsWithFieldErrorsOnInvalidConfig(t *testing.T) {
+	// Given a config whose rule references an undefined target, when
+	// validate runs, it exits 1 and names the offending rule and target on
+	// stderr; stdout stays empty.
+	path := writeConfig(t, `
+default = "personal"
+
+[browsers.personal]
+browser = "chrome"
+
+[[rules]]
+name = "points-nowhere"
+matcher = "exact-host"
+pattern = "a.example"
+target = "missing-target"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+
+	if code != exitFailure {
+		t.Fatalf("exit code = %d, want %d", code, exitFailure)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty on failure", stdout)
+	}
+	if !strings.Contains(stderr, "points-nowhere") || !strings.Contains(stderr, "missing-target") {
+		t.Errorf("stderr = %q, want the offending rule and target named", stderr)
+	}
+}
+
+func TestValidateFailsWhenConfigFileIsMissing(t *testing.T) {
+	// Given a config path that does not exist, when validate runs, the
+	// missing file is named on stderr with exit 1.
+	missing := filepath.Join(t.TempDir(), "nope.toml")
+
+	code, stdout, stderr := runCapture(t, "", "validate", "-config", missing)
+
+	if code != exitFailure {
+		t.Fatalf("exit code = %d, want %d", code, exitFailure)
+	}
+	if !strings.Contains(stderr, "nope.toml") {
+		t.Errorf("stderr = %q, want the missing file named", stderr)
+	}
+	_ = stdout
+}
+
+func TestValidateRejectsMisusedFlags(t *testing.T) {
+	// Given an undefined flag, when validate runs, it exits with the
+	// usage code.
+	code, _, stderr := runCapture(t, "", "validate", "-bogus")
+
+	if code != exitUsage {
+		t.Fatalf("exit code = %d, want %d", code, exitUsage)
+	}
+	if stderr == "" {
+		t.Error("stderr = empty, want flag guidance")
+	}
+}
+
+func TestExplainReportsTheRoutingDecision(t *testing.T) {
+	// Given a matching URL and a valid config, when explain runs, it
+	// prints the deterministic decision report on stdout, states that no
+	// browser was launched, and warns about sensitive URL data.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://company.example/page?q=1")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	for _, want := range []string{
+		"url: https://company.example/page?q=1",
+		`target: personal (rule "work")`,
+		"fallback: no (a rule matched)",
+		"rules evaluated: 1",
+		`1. work (exact-host "company.example"): matched`,
+		`skipped 1. tickets: not evaluated (an earlier rule matched)`,
+		"no browser was launched.",
+		"may contain sensitive data",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestExplainReportsFallbackToDefault(t *testing.T) {
+	// Given a URL no rule matches, when explain runs, the report names the
+	// default target, lists every evaluated rule, and records no skips.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://other.example/")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	for _, want := range []string{
+		"target: personal (default)",
+		"fallback: yes (no rule matched)",
+		"rules evaluated: 2",
+		"1. work (exact-host \"company.example\"): no match",
+		"2. tickets (url-regex \"^https://tickets\"): no match",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "skipped") {
+		t.Errorf("stdout mentions skips with no match:\n%s", stdout)
+	}
+}
+
+func TestExplainIsDeterministic(t *testing.T) {
+	// Given the same invocation twice, when explain runs, the output is
+	// byte-identical.
+	path := writeConfig(t, twoRuleConfig)
+
+	_, first, _ := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	_, second, _ := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+
+	if first != second {
+		t.Errorf("explain output is not deterministic:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestValidateRejectsPositionalArguments(t *testing.T) {
+	// Given validate receives a positional argument, when it runs, that is
+	// a usage error: validate reads no URL.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, _, stderr := runCapture(t, "", "validate", "-config", path, "unexpected-arg")
+
+	if code != exitUsage {
+		t.Fatalf("exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "unexpected-arg") {
+		t.Errorf("stderr = %q, want the argument named", stderr)
+	}
+}
+
+func TestValidateReportsUnresolvableConfigLocation(t *testing.T) {
+	// Given no usable config directory and no explicit override, when
+	// validate runs, the failure is visible and actionable.
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	code, _, stderr := runCapture(t, "", "validate")
+
+	if code != exitFailure {
+		t.Fatalf("exit code = %d, want %d", code, exitFailure)
+	}
+	if !strings.Contains(stderr, "cannot determine config path") {
+		t.Errorf("stderr = %q, want the resolution failure", stderr)
+	}
+}
+
+func TestExplainRejectsMultipleURLArguments(t *testing.T) {
+	// Given two URL arguments, when explain runs, that is a usage error:
+	// exactly one URL is explained per invocation.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, _, stderr := runCapture(t, "", "explain", "-config", path, "https://a.example/", "https://b.example/")
+
+	if code != exitUsage {
+		t.Fatalf("exit code = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "exactly one URL") {
+		t.Errorf("stderr = %q, want one-URL guidance", stderr)
+	}
+}
+
+func TestExplainReportsProfiles(t *testing.T) {
+	// Given the winning target has a machine-local profile, when explain
+	// runs, the profile is reported alongside the target.
+	path := writeConfig(t, `
+default = "work"
+
+[browsers.work]
+browser = "brave"
+profile = "Work"
+
+[[rules]]
+name = "always"
+matcher = "exact-host"
+pattern = "company.example"
+target = "work"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "explain", "-config", path, "https://company.example/")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "profile: Work") {
+		t.Errorf("stdout = %q, want the profile reported", stdout)
+	}
+}
+
+func TestExplainRejectsInvalidURLsWithExitOne(t *testing.T) {
+	// Given an unsupported or malformed URL, when explain runs, it fails
+	// with the typed reason on stderr and exit 1.
+	path := writeConfig(t, twoRuleConfig)
+
+	for _, tc := range []struct {
+		name, url, want string
+	}{
+		{name: "unsupported scheme", url: "ftp://company.example", want: "unsupported scheme"},
+		{name: "malformed url", url: "http://[bad", want: "malformed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr := runCapture(t, "", "explain", "-config", path, tc.url)
+
+			if code != exitFailure {
+				t.Fatalf("exit code = %d, want %d", code, exitFailure)
+			}
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("stderr = %q, want %q", stderr, tc.want)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty on failure", stdout)
+			}
+		})
+	}
+}
+
+func TestExplainReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
+	// Given no URL argument, when explain runs, it reads one URL line from
+	// stdin; empty stdin is a usage error.
+	path := writeConfig(t, twoRuleConfig)
+
+	code, stdout, _ := runCapture(t, "https://company.example/\n", "explain", "-config", path)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout, "url: https://company.example/") {
+		t.Errorf("stdout = %q, want the stdin URL explained", stdout)
+	}
+
+	code, _, stderr := runCapture(t, "\n", "explain", "-config", path)
+	if code != exitUsage {
+		t.Fatalf("exit code = %d, want %d for empty stdin", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "URL") {
+		t.Errorf("stderr = %q, want URL guidance", stderr)
+	}
+}
+
+func TestExplainKeepsConfigValiditySeparateFromBrowserAvailability(t *testing.T) {
+	// Given a config referencing a browser that may not be installed,
+	// when validate and explain run, neither claims the browser exists.
+	path := writeConfig(t, `
+default = "firefox-zone"
+
+[browsers.firefox-zone]
+browser = "firefox"
+profile = "zzz-not-installed"
+
+[[rules]]
+name = "always"
+matcher = "exact-host"
+pattern = "company.example"
+target = "firefox-zone"
+`)
+
+	code, stdout, stderr := runCapture(t, "", "validate", "-config", path)
+	if code != 0 {
+		t.Fatalf("validate exit = %d stderr = %q", code, stderr)
+	}
+	if strings.Contains(strings.ToLower(stdout+stderr), "installed") {
+		t.Errorf("validate claimed browser availability: %q", stdout)
+	}
+
+	code, stdout, _ = runCapture(t, "", "explain", "-config", path, "https://company.example/")
+	if code != 0 {
+		t.Fatalf("explain exit = %d", code)
+	}
+	if !strings.Contains(strings.ToLower(stdout), "installed") {
+		t.Errorf("explain claimed browser availability:\n%s", stdout)
+	}
 }

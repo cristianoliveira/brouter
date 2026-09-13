@@ -39,13 +39,11 @@ needs them — no empty scaffolding:
 
 ## Current state
 
-`cmd/brouter` exposes help and invalid-invocation paths only.
-`internal/domain` implements the pure routing core: exact-host,
-subdomain, and full-URL-regex matchers with first-match-wins fallback,
-ordered reasons, skipped-rule tracking, and typed invalid-URL errors —
-no filesystem, process, or network access (standard library only).
-`internal/infra/config` loads and validates the portable TOML
-configuration (one documented user location per OS, explicit path
-override, no merging) into pure domain inputs; the domain never sees the
-parser. The CLI does not consume either yet; wiring arrives with the
-open task.
+`cmd/brouter` exposes `validate` and `explain` diagnostics: validate
+reports configuration health with actionable per-field/rule errors;
+explain prints the deterministic routing decision for one URL (arg or
+stdin), including evaluated and skipped rules, profile, fallback, and an
+explicit "no browser was launched" statement. Exit codes: 0 success,
+1 validation failure, 2 usage error. Routing decisions come from
+`internal/domain`; configuration from `internal/infra/config` — neither
+launches browsers or writes logs.
