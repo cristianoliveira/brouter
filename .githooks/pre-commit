@@ -1,0 +1,4 @@
+#!/bin/sh
+# Normal quality gate. Must stay identical to the watcher and CI gate
+# (TASK-0004): one command, one contract.
+exec make check

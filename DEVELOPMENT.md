@@ -7,11 +7,33 @@ prose-only.
 
 | Policy | Command | Enforcement |
 |---|---|---|
-| One normal gate: lint + type checks + deterministic tests | `make check` | Shell script; hooks, watcher, and CI call the same command (wired in TASK-0004) |
+| One normal gate: lint + type checks + deterministic tests | `make check` | Enforced by versioned hooks (`make hooks-install`), the fzz watcher (`.watch.yaml`), and CI (`.github/workflows/ci.yml`) — all invoke the same command |
+| Conventional commits referencing task IDs | see `.githooks/commit-msg` | Enforced by the versioned commit-msg hook (merge/revert exempt) |
 | Deterministic formatting via gofmt | `gofmt -l ./...` (check), `gofmt -w` (fix) | Separate command; release enforcement in TASK-0005 |
 | Static analysis beyond the pinned lint rules | `go vet ./...` | Separate command; TASK-0005 |
 | Race/coverage/security/architecture budgets | TASK-0005 targets | Separate commands; release enforcement |
-| Conventional commits referencing task IDs | developer discipline + commit-msg hook | Hook enforcement in TASK-0004 |
+
+## Lifecycle: hooks, watcher, CI
+
+One gate command everywhere; nothing competes with it.
+
+```sh
+make hooks-install     # once per clone: core.hooksPath=.githooks
+make hooks-check       # verify installation (prints true / false + guidance)
+make hooks-uninstall   # restore: removes core.hooksPath (nothing was overwritten)
+fzz check              # validate .watch.yaml
+fzz run gate           # run the gate job once
+fzz                    # watch: reruns make check on gate-relevant changes
+```
+
+- pre-commit and pre-push run `make check`; commit-msg enforces
+  `<type>(<scope>)?: TASK-XXXX <summary>` (merge/revert exempt).
+- Install never overwrites: a foreign `core.hooksPath` or active legacy
+  hooks in `.git/hooks` cause a refusal naming what was found.
+- CI (`.github/workflows/ci.yml`) runs `make check` on Linux and macOS
+  with Go from `go.mod` and golangci-lint pinned at 2.13.2 — the same
+  versions as the dev shell. Remote CI evidence is pending until a real
+  push is observed; until then CI is documented, not claimed.
 
 ## Failure modes → recovery
 
@@ -21,6 +43,9 @@ prose-only.
 | `golangci-lint` missing | Run `nix develop` (pinned 2.13.2; never install floating versions) |
 | Gate prints `false`, exit nonzero | Read `.tmp/check.log` (full output); fix the first failing step; rerun `make check` |
 | `go: requires go >= X` | Local toolchain older than `go.mod`; update the local toolchain or bump the locked dev shell deliberately |
+| commit-msg hook rejects a commit | Rewrite the subject: `<type>(<scope>)?: TASK-XXXX <summary>`; `git commit --amend` for the head commit or `git rebase -i` only on unpushed work |
+| pre-commit/pre-push rejects a push | Run `make check`, read `.tmp/check.log`, fix the failing step |
+| Hook install refuses (existing hooks) | Migrate the named hooks into `.githooks/`, then rerun `make hooks-install` |
 | Gate blocked mid-run | Rerun `make check`; the log is recreated fresh each run |
 
 ## DO NOT

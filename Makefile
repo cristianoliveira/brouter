@@ -2,7 +2,7 @@
 # `make check`; TASK-0005 adds separate format/static-analysis/race/
 # coverage/security/architecture commands. Do not expand these targets.
 
-.PHONY: check build test lint
+.PHONY: check build test lint hooks-install hooks-check hooks-uninstall
 
 # The one normal lint/type-and-test gate.
 # Contract: success prints exactly "true"; failure prints "false", bounded
@@ -21,3 +21,15 @@ test:
 
 lint:
 	@golangci-lint run
+
+# Versioned hooks: install once per clone; hooks/watcher/CI all run the
+# same `make check` gate. Install refuses to overwrite existing hook
+# configuration (see scripts/hooks-install.sh).
+hooks-install:
+	@sh scripts/hooks-install.sh
+
+hooks-check:
+	@sh scripts/hooks-check.sh
+
+hooks-uninstall:
+	@git config --unset core.hooksPath 2>/dev/null || echo "core.hooksPath was not set"
