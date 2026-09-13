@@ -5,7 +5,7 @@ One default browser does not represent separate work contexts. Users need predic
 
 ## Confirmed decisions
 - Implementation language: Go.
-- Supported operating systems: NixOS with Nix-installed browsers, and macOS (Darwin). Other Linux distributions and Flatpak/Snap are outside initial support.
+- Supported operating systems: NixOS with Nix-installed browsers on Sway (Wayland), and current macOS (Darwin), Apple Silicon first. Intel is unverified, not an initial support requirement. Other Linux distributions and Flatpak/Snap are outside initial support.
 - Repository and Go module path: github.com/cristianoliveira/brouter (verified from origin).
 - Configuration lives in a file suitable for dotfiles version control.
 - Main workflow routes to different browsers. Optional browser profiles are also desired.
@@ -24,8 +24,8 @@ One default browser does not represent separate work contexts. Users need predic
 - Conventional commits; portable Make commands; deterministic tests before logic changes.
 
 ## Decisions needed
-1. NixOS desktop/compositor and preferred declarative installation path (NixOS module or Home Manager). Propose flake package first; defer module choice until handler integration is proven.
-2. Current macOS is the intended baseline; clarify CPU support. Local machine reports arm64 and macOS 26.6.2. Propose Apple Silicon first and Intel unverified, not explicitly excluded by the user yet. Release signing/notarization expectations remain open.
+1. Preferred declarative installation path (NixOS module or Home Manager); Home Manager usage is not yet confirmed. Desktop is confirmed as Sway, which uses Wayland. Propose flake package first; defer module choice until handler integration is proven.
+2. Current macOS, Apple Silicon first, is confirmed. Local machine reports arm64 and macOS 26.6.2; choose an explicit deployment minimum during bootstrap. Release signing/notarization expectations remain open.
 3. Confirm TOML and initial matcher semantics.
 4. Initial Go toolchain version; module path is confirmed above.
 5. Whether optional profiles must ship in first usable release. Planned as a separate deliverable, not forgotten.

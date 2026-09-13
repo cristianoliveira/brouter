@@ -14,7 +14,7 @@ A Go CLI alone does not receive macOS default-browser URL events. This integrati
 A minimal macOS experiment establishes the smallest viable integration.
 
 ## Acceptance criteria
-- Build a minimal app bundle that declares HTTP/HTTPS handling and receives a URL through the OS event mechanism.
+- Build a minimal app bundle for current macOS on Apple Silicon that declares HTTP/HTTPS handling and receives a URL through the OS event mechanism. Intel support is not required for this experiment.
 - Forward an unchanged test URL to Brave or Chrome when target and router are closed and already running; exercise sequential events.
 - Compare direct Go/native interop with a thin native helper only as needed; record complexity, cgo and build requirements, and recommendation.
 - Separate process-exit success from evidence that the browser actually received the URL.

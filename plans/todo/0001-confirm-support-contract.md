@@ -14,8 +14,8 @@ NixOS desktop integration, macOS CPU support, and matching semantics remain open
 A short approved contract separates required behavior from deferred support.
 
 ## Acceptance criteria
-- Linux distribution/package source is confirmed: NixOS with Nix-installed browsers; exclude other distributions and Flatpak/Snap initially. Confirm desktop/compositor and preferred declarative integration.
-- Confirm current macOS baseline and CPU architectures. Local host is arm64/macOS 26.6.2; Apple Silicon first with Intel unverified is proposed, not yet approved.
+- Linux baseline is confirmed: NixOS with Nix-installed browsers on Sway (Wayland); exclude other distributions and Flatpak/Snap initially. Confirm preferred declarative integration; Home Manager usage remains unknown.
+- Current macOS with Apple Silicon-first support is confirmed; Intel is unverified and not initially required. Local host is arm64/macOS 26.6.2; record an explicit deployment minimum during bootstrap.
 - Confirm TOML, first-match order, exact host/subdomain and full-URL regex semantics, config lookup, and fallback behavior.
 - Use confirmed Go module path github.com/cristianoliveira/brouter; choose toolchain and confirm whether optional profiles are a first-release requirement.
 - Record signing/notarization expectations and any local-only first-release concession.

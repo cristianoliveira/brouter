@@ -10,7 +10,7 @@ tags: [linux, packaging]
 Users need persistent desktop integration beyond an experiment or shell command.
 
 ## Outcome
-NixOS has a reproducible Nix package and documented declarative desktop integration.
+NixOS with Sway (Wayland) has a reproducible Nix package and documented declarative desktop integration.
 
 ## Acceptance criteria
 - Provide a flake package that includes executable and valid desktop entry declaring HTTP/HTTPS handling with safe desktop Exec argument behavior; build offline at runtime without mutable installation scripts.
