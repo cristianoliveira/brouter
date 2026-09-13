@@ -1,7 +1,7 @@
 ---
 id: TASK-0007
 title: Prove Linux desktop URL receipt and browser forwarding
-status: doing
+status: done
 depends_on: [TASK-0002]
 priority: high
 tags: [linux, spike]
