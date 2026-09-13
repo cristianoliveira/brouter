@@ -61,8 +61,10 @@ between. `spike.example` intentionally does not serve pages: success
 means the URL reaches the selected browser (exact URL visible in the
 address bar, query and fragment intact), NOT that the page loads.
 
-Run from the repo root on branch `task-0011-browser-launch` (contains
-the reviewed d5493f6 content).
+Run from the repo root with PR #15's code checked out:
+`git checkout task-0011-browser-launch` (reviewed CLI is commit
+c5707e4; the two commits after it are documentation only, so the tip
+is equivalent for this smoke).
 
 One-time setup — creates the config before any use:
 
