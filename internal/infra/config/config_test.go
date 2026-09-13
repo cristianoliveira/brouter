@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -227,6 +228,87 @@ func TestLoadAggregatesTargetErrorsDeterministically(t *testing.T) {
 	}
 	if aaa > zzz {
 		t.Errorf("errors not sorted by target name:\n%s", first)
+	}
+}
+
+func TestLoadRedactsRegexPatternFromErrors(t *testing.T) {
+	// Given an invalid url-regex whose pattern embeds a secret, when
+	// loaded, the error names the rule and the syntax problem but never
+	// echoes the pattern back.
+	_, err := loadFixture(t, "invalid-regex-secret.toml")
+	if err == nil {
+		t.Fatal("Load succeeded with invalid regex")
+	}
+	if !strings.Contains(err.Error(), "leaky") || !strings.Contains(err.Error(), "invalid url regex") {
+		t.Errorf("error = %q, want the rule named with invalid-regex reason", err)
+	}
+	if strings.Contains(err.Error(), "secret-hunter-123") {
+		t.Errorf("error = %q, want the pattern redacted", err)
+	}
+}
+
+func TestLoadRejectsExecutableTargetWithProfile(t *testing.T) {
+	// Given an executable target carrying a profile, when loaded, it is
+	// rejected instead of silently dropping the profile.
+	_, err := loadFixture(t, "executable-with-profile.toml")
+	if err == nil {
+		t.Fatal("Load succeeded with executable target plus profile")
+	}
+	if !strings.Contains(err.Error(), "profile") || !strings.Contains(err.Error(), "executable") {
+		t.Errorf("error = %q, want executable/profile conflict named", err)
+	}
+}
+
+func TestLoadRejectsEmptyTargetName(t *testing.T) {
+	// Given a target table with an empty name, when loaded, it is
+	// rejected: target names identify destinations and must exist.
+	_, err := loadFixture(t, "empty-target-name.toml")
+	if err == nil {
+		t.Fatal("Load succeeded with empty target name")
+	}
+	if !strings.Contains(err.Error(), "target name must not be empty") {
+		t.Errorf("error = %q, want empty-name rejection", err)
+	}
+}
+
+func TestLoadDefaultUsesTheDocumentedLocation(t *testing.T) {
+	// Given a config written to the documented per-OS location, when
+	// LoadDefault runs, it loads exactly that file; a missing file names
+	// the expected path.
+	configRoot := t.TempDir()
+	t.Setenv("HOME", configRoot)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	expected, err := DefaultPath()
+	if err != nil {
+		t.Skipf("no user config dir derivable: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(expected), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(filepath.Join("testdata", "valid-minimal.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(expected, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadDefault()
+	if err != nil {
+		t.Fatalf("LoadDefault failed: %v", err)
+	}
+	if cfg.Default != domain.Target("personal") {
+		t.Errorf("default = %q, want personal from the documented location", cfg.Default)
+	}
+
+	if err := os.Remove(expected); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDefault(); err == nil {
+		t.Fatal("LoadDefault succeeded without a config file")
+	} else if !strings.Contains(err.Error(), "config.toml") {
+		t.Errorf("error = %q, want the expected path named", err)
 	}
 }
 

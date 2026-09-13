@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -78,9 +79,20 @@ func DefaultPath() (string, error) {
 	return filepath.Join(base, "brouter", "config.toml"), nil
 }
 
+// LoadDefault loads the configuration from DefaultPath, the documented
+// per-OS location. Explicit paths go through Load instead.
+func LoadDefault() (*Config, error) {
+	path, err := DefaultPath()
+	if err != nil {
+		return nil, err
+	}
+	return Load(path)
+}
+
 // Load reads and validates the configuration file at path. Every error
 // names the offending file, field, or rule; the file content is never
-// dumped.
+// dumped and url-regex patterns are redacted from errors: patterns often
+// embed route secrets.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -161,6 +173,12 @@ func validateRules(path string, specs []ruleSpec, targets map[string]TargetDefin
 	)
 	seen := map[string]bool{}
 	for index, spec := range specs {
+		if domain.MatcherKind(spec.Matcher) == domain.URLRegex {
+			if _, err := regexp.Compile(spec.Pattern); err != nil {
+				errs = append(errs, fmt.Errorf("%s: rules[%d].pattern (rule %q): invalid url regex: %v (pattern not shown)", path, index, spec.Name, err))
+				continue
+			}
+		}
 		rule, err := domain.NewRule(spec.Name, domain.MatcherKind(spec.Matcher), spec.Pattern, domain.Target(spec.Target))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: rules[%d]: %w", path, index, err))
@@ -181,6 +199,9 @@ func validateRules(path string, specs []ruleSpec, targets map[string]TargetDefin
 }
 
 func validateTarget(name string, spec browserSpec) (TargetDefinition, error) {
+	if strings.TrimSpace(name) == "" {
+		return TargetDefinition{}, fmt.Errorf("target name must not be empty")
+	}
 	hasBrowser := strings.TrimSpace(spec.Browser) != ""
 	hasCommand := strings.TrimSpace(spec.Command) != ""
 
@@ -188,6 +209,9 @@ func validateTarget(name string, spec browserSpec) (TargetDefinition, error) {
 	case hasBrowser && hasCommand:
 		return TargetDefinition{}, fmt.Errorf("target must be either a known browser or an executable, not both")
 	case hasCommand:
+		if spec.Profile != "" {
+			return TargetDefinition{}, fmt.Errorf("executable targets do not support a profile; profiles are a known-browser feature")
+		}
 		if strings.ContainsAny(spec.Command, shellMetacharacters) {
 			return TargetDefinition{}, fmt.Errorf("command must be a single literal path without shell metacharacters")
 		}

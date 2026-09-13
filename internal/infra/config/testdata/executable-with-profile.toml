@@ -1,0 +1,5 @@
+default = "weird"
+
+[browsers.weird]
+command = "/usr/local/bin/weird-browser"
+profile = "Work"
