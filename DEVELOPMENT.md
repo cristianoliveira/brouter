@@ -50,7 +50,9 @@ Contract:
   toolchain (a too-old toolchain fails with an explicit version error
   instead of downloading) and `LC_ALL=C` for stable output ordering.
 - Missing prerequisites (`go`, `golangci-lint`) fail with setup guidance;
-  nothing is auto-downloaded.
+  nothing is auto-downloaded. `golangci-lint` is a self-contained pinned
+  binary and runs with `GOTOOLCHAIN=local` exported, so neither it nor any
+  `go` invocation it spawns can trigger a toolchain download.
 
 The gate is a POSIX shell script (`scripts/check.sh`) by decision: no Go
 program orchestrates or lints Go. Its behavior is covered by
