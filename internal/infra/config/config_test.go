@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -328,5 +329,69 @@ func TestDefaultPathUsesUserConfigDir(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	if _, err := DefaultPath(); err == nil {
 		t.Error("DefaultPath succeeded without any config dir, want visible failure")
+	}
+}
+
+func writeTOML(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadRejectsUnsafeProfileIdentifiers(t *testing.T) {
+	// Given profile values that would traverse paths, inject flags, or
+	// collide with special directories, when loaded, each is rejected with
+	// a visible reason. Profiles are directory identifiers inside the
+	// browser's user-data dir, never free-form paths.
+	for name, profile := range map[string]string{
+		"path separator":        "Work/extra",
+		"windows separator":     `Work\extra`,
+		"flag injection":        "-P evil",
+		"parent directory":      "..",
+		"current directory":     ".",
+		"equals-form injection": "--profile-directory=evil",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeTOML(t, fmt.Sprintf(`
+default = "work"
+
+[browsers.work]
+browser = "brave"
+profile = %q
+`, profile))
+
+			_, err := Load(path)
+			if err == nil {
+				t.Fatalf("profile %q accepted, want rejection", profile)
+			}
+			if !strings.Contains(err.Error(), "profile") {
+				t.Errorf("error %q does not mention the profile", err)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsSafeProfileIdentifiers(t *testing.T) {
+	// Given ordinary profile directory names (as shown by the browser's
+	// profile list), when loaded, they are accepted and marked as set.
+	path := writeTOML(t, `
+default = "work"
+
+[browsers.work]
+browser = "brave"
+profile = "Profile 1"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	assertKnownTarget(t, cfg.Targets["work"], "brave", "Profile 1")
+	if !cfg.Targets["work"].ProfileSet {
+		t.Error("ProfileSet = false, want true")
 	}
 }

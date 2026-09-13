@@ -32,7 +32,9 @@ type candidate struct {
 // fallback to another target.
 func Resolve(def config.TargetDefinition, name string, env *Env) (Plan, error) {
 	if def.ProfileSet {
-		return Plan{}, fmt.Errorf("target %q: profile %q is not supported yet (profiles arrive in a later task); remove it or drop the target", name, def.Profile)
+		if err := verifyProfileDirectory(def.Browser, def.Profile, env); err != nil {
+			return Plan{}, fmt.Errorf("target %q: %w", name, err)
+		}
 	}
 
 	var (
@@ -51,11 +53,21 @@ func Resolve(def config.TargetDefinition, name string, env *Env) (Plan, error) {
 		return Plan{}, fmt.Errorf("target %q: %w", name, err)
 	}
 
+	if def.ProfileSet {
+		plan.Args = append(plan.Args, "--profile-directory="+def.Profile)
+		plan.Detail += fmt.Sprintf(", profile %q verified", def.Profile)
+	}
+
 	if err := rejectRouterTarget(plan.Executable, env); err != nil {
 		return Plan{}, fmt.Errorf("target %q: %w", name, err)
 	}
 	return plan, nil
 }
+
+// verifyProfileDirectory proves the configured profile exists inside the
+// browser's user-data dir before anything is launched. A missing or
+// unverifiable profile fails explicitly: launching would make the
+// browser silently create a fresh profile, which brouter never does.
 
 func resolveExecutable(command string, env *Env) (Plan, error) {
 	if command == "" {
@@ -157,6 +169,48 @@ func knownCandidates(browser string, env *Env) ([]candidate, bool) {
 		}
 	default:
 		return nil, false
+	}
+}
+
+// verifyProfileDirectory proves the configured profile exists inside the
+// browser's user-data dir before anything is launched. A missing or
+// unverifiable profile fails explicitly: launching would make the
+// browser silently create a fresh profile, which brouter never does.
+func verifyProfileDirectory(browser, profile string, env *Env) error {
+	root, ok := userDataRoot(browser, env)
+	if !ok {
+		return fmt.Errorf("known browser %q has no profile location on this platform (brave and chrome are supported)", browser)
+	}
+	dir := filepath.Join(root, profile)
+	if !env.exists(dir) {
+		return fmt.Errorf("profile directory %s does not exist; brouter never creates profiles — create or verify it in the browser first", dir)
+	}
+	return nil
+}
+
+// userDataRoot maps a browser to its machine-local user-data dir per
+// platform. These are the directories the browsers themselves create
+// and manage; profile identifiers inside them are the on-disk names
+// (for example "Default" or "Profile 1"), not user-facing display
+// names. NixOS shares the Linux layout: HOME/.config.
+func userDataRoot(browser string, env *Env) (string, bool) {
+	home, err := env.Home()
+	if err != nil {
+		return "", false
+	}
+	switch browser {
+	case "brave":
+		if env.GOOS == "darwin" {
+			return filepath.Join(home, "Library/Application Support/BraveSoftware/Brave-Browser"), true
+		}
+		return filepath.Join(home, ".config/BraveSoftware/Brave-Browser"), true
+	case "chrome":
+		if env.GOOS == "darwin" {
+			return filepath.Join(home, "Library/Application Support/Google/Chrome"), true
+		}
+		return filepath.Join(home, ".config/google-chrome"), true
+	default:
+		return "", false
 	}
 }
 

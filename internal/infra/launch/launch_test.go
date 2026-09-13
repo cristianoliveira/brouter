@@ -171,3 +171,25 @@ func TestLaunchWrapsRunnerErrors(t *testing.T) {
 		t.Errorf("error = %v, want wrapped boom", err)
 	}
 }
+
+func TestLaunchCarriesProfileArgumentBeforeURL(t *testing.T) {
+	// Given a resolved profiled plan, when launching, the profile
+	// argument precedes the URL and both reach the browser as discrete
+	// argv elements.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	browser := writeFakeBrowser(t, dir, log, 0)
+
+	plan := Plan{Executable: browser, Args: []string{"--profile-directory=Work"}, Detail: "test"}
+	if err := Launch(plan, "https://example.com/?q=1", nil); err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+
+	lines := readLines(t, log)
+	if len(lines) != 3 {
+		t.Fatalf("argv = %q, want [profile-arg, url, argc=2]", lines)
+	}
+	if lines[0] != "--profile-directory=Work" || lines[1] != "https://example.com/?q=1" || lines[2] != "argc=2" {
+		t.Errorf("argv = %q, want profile argument then URL as separate elements", lines)
+	}
+}

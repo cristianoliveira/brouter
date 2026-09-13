@@ -183,21 +183,6 @@ func TestResolveExecutableMissingPathFails(t *testing.T) {
 	}
 }
 
-func TestResolveProfileTargetReportsUnsupported(t *testing.T) {
-	// Given a known target with a profile, when resolving, the profile is
-	// reported as unsupported instead of being silently ignored.
-	env := fakeEnv("linux", "/home/u", []string{"/usr/bin/brave"}, "/bin/brouter")
-	def := config.TargetDefinition{Kind: "known", Browser: "brave", Profile: "work", ProfileSet: true}
-
-	_, err := Resolve(def, "work", env)
-	if err == nil {
-		t.Fatal("Resolve succeeded, want unsupported-profile failure")
-	}
-	if !strings.Contains(err.Error(), "profile") || !strings.Contains(err.Error(), "not supported") {
-		t.Errorf("error %q does not report profile as unsupported", err)
-	}
-}
-
 func TestResolveKnownBrowserOutsideBraveAndChromeReportsUnsupported(t *testing.T) {
 	// Given a known firefox target, when resolving, the failure says this
 	// build resolves only brave and chrome and suggests an executable.
@@ -275,3 +260,116 @@ func (fakeFileInfo) Mode() fs.FileMode  { return 0o755 }
 func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
 func (fakeFileInfo) IsDir() bool        { return false }
 func (fakeFileInfo) Sys() any           { return nil }
+
+func TestResolveProfiledBraveConstructsProfileArgument(t *testing.T) {
+	// Given a brave target with an existing profile directory, when
+	// resolving, the plan carries the profile as a structured browser
+	// argument and records the verification.
+	env := fakeEnv("linux", "/home/u", []string{
+		"/usr/bin/brave",
+		"/home/u/.config/BraveSoftware/Brave-Browser/Work",
+	}, "/bin/brouter")
+
+	plan, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "brave", Profile: "Work", ProfileSet: true,
+	}, "work", env)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if want := []string{"--profile-directory=Work"}; strings.Join(plan.Args, "|") != strings.Join(want, "|") {
+		t.Errorf("args = %q, want %q", plan.Args, want)
+	}
+	if !strings.Contains(plan.Detail, "Work") {
+		t.Errorf("detail = %q, want the verified profile mentioned", plan.Detail)
+	}
+}
+
+func TestResolveProfiledChromeDarwinMapsUserDataDir(t *testing.T) {
+	// Given a darwin environment with an existing Chrome profile
+	// directory, when resolving, the platform user-data mapping finds it.
+	dir := "/home/u/Library/Application Support/Google/Chrome/Work"
+	env := fakeEnv("darwin", "/home/u", []string{
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		dir,
+	}, "/bin/brouter")
+
+	plan, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "chrome", Profile: "Work", ProfileSet: true,
+	}, "work", env)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if !strings.Contains(plan.Detail, "Work") {
+		t.Errorf("detail = %q, want the verified profile mentioned", plan.Detail)
+	}
+}
+
+func TestResolveFailsExplicitlyWhenProfileDirectoryIsMissing(t *testing.T) {
+	// Given a profile directory that does not exist, when resolving, the
+	// failure names the expected path and states that brouter never
+	// creates profiles (launching would silently create one).
+	env := fakeEnv("linux", "/home/u", []string{"/usr/bin/brave"}, "/bin/brouter")
+
+	_, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "brave", Profile: "Ghost", ProfileSet: true,
+	}, "work", env)
+	if err == nil {
+		t.Fatal("Resolve succeeded, want explicit profile failure")
+	}
+	for _, want := range []string{
+		"/home/u/.config/BraveSoftware/Brave-Browser/Ghost",
+		"never creates profiles",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+func TestResolveFailsExplicitlyWhenBrowserUserDataDirIsMissing(t *testing.T) {
+	// Given a browser that has never run (no user-data dir at all), when
+	// resolving a profiled target, the failure is the same explicit
+	// missing-profile class, not a silent default launch.
+	env := fakeEnv("linux", "/home/u", nil, "/bin/brouter")
+
+	_, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "brave", Profile: "Default", ProfileSet: true,
+	}, "work", env)
+	if err == nil {
+		t.Fatal("Resolve succeeded, want explicit profile failure")
+	}
+	if !strings.Contains(err.Error(), "never creates profiles") {
+		t.Errorf("error %q does not state the no-creation policy", err)
+	}
+}
+
+func TestResolveUnsupportedBrowserWithProfileReportsBrowser(t *testing.T) {
+	// Given a known browser outside brave/chrome with a profile, when
+	// resolving, the unsupported-browser failure wins over any profile
+	// verification (there is no mapping to verify against).
+	env := fakeEnv("linux", "/home/u", []string{"/usr/bin/firefox"}, "/bin/brouter")
+
+	_, err := Resolve(config.TargetDefinition{
+		Kind: "known", Browser: "firefox", Profile: "Work", ProfileSet: true,
+	}, "work", env)
+	if err == nil {
+		t.Fatal("Resolve succeeded, want unsupported-browser failure")
+	}
+	if !strings.Contains(err.Error(), "firefox") {
+		t.Errorf("error %q does not name the browser", err)
+	}
+}
+
+func TestResolveWithoutProfileKeepsArgsEmpty(t *testing.T) {
+	// Given a target without a profile, when resolving, no profile
+	// argument is constructed: no-profile behavior is unchanged.
+	env := fakeEnv("linux", "/home/u", []string{"/usr/bin/brave"}, "/bin/brouter")
+
+	plan, err := Resolve(knownTarget("brave"), "work", env)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if len(plan.Args) != 0 {
+		t.Errorf("args = %q, want none for a no-profile target", plan.Args)
+	}
+}

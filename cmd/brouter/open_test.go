@@ -107,24 +107,26 @@ func TestOpenReadsURLFromStdinWhenArgumentIsMissing(t *testing.T) {
 	}
 }
 
-func TestOpenReportsUnsupportedProfileInsteadOfIgnoringIt(t *testing.T) {
-	// Given a known target that sets a profile, when open runs, it fails
-	// visibly instead of accepting the profile and silently ignoring it.
+func TestOpenFailsExplicitlyWhenProfileDirectoryIsMissing(t *testing.T) {
+	// Given a known target whose profile directory does not exist on this
+	// machine, when open runs, it fails visibly instead of silently
+	// opening the default profile or creating a new one. The unlikely
+	// profile name keeps the failure deterministic on any machine.
 	path := writeConfig(t, `
 default = "brave-work"
 
 [browsers.brave-work]
 browser = "brave"
-profile = "Work"
+profile = "task-0012-missing-profile"
 `)
 
-	code, stdout, stderr := runCapture(t, "", "open", "-config", path, "https://example.com/")
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/")
 
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr, "profile") || !strings.Contains(stderr, "not supported") {
-		t.Errorf("stderr = %q, want an unsupported-profile report", stderr)
+	if !strings.Contains(stderr, "task-0012-missing-profile") || !strings.Contains(stderr, "never creates profiles") {
+		t.Errorf("stderr = %q, want an explicit missing-profile report", stderr)
 	}
 	if stdout != "" {
 		t.Errorf("stdout = %q, want nothing on failure", stdout)
