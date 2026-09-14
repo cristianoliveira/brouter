@@ -2,10 +2,12 @@
 # Read-only macOS browser-dropdown eligibility probe for BrouterHandler.
 #
 # Reports the LaunchServices facts that decide whether the app can
-# appear in System Settings > Desktop & Dock > Default web browser:
-# claimed schemes, claimed document types (the browser-category marker
-# UTI plus html/xhtml), role, and whether every registration points at
-# a bundle that still exists on disk.
+# appear in System Settings > Desktop & Dock > Default web browser.
+# Every registration section for the bundle identifier is evaluated
+# independently: eligibility requires ONE live path whose own claims
+# include the http and https schemes AND the html/xhtml plus
+# browser-category document types. Claims from dangling registrations
+# never vouch for a live one.
 #
 # This probe NEVER mutates state: no lsregister -f/-u, no defaults
 # writes, no process kills, no LaunchServices database reset.
@@ -14,70 +16,113 @@ set -u
 LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 APP_ID="com.cristianoliveira.brouter.handler"
 
-dump=$("$LSREG" -dump 2>/dev/null)
+# Optional argument: path to a saved `lsregister -dump` output. The
+# live database snapshot can vary between invocations while LS settles,
+# so recording once and probing the recording keeps repeated analysis
+# deterministic. Without an argument the probe captures its own dump.
+dump_file=${1:-}
+if [ -n "$dump_file" ]; then
+	if [ ! -r "$dump_file" ]; then
+		printf '%s\n' "refusing: dump file $dump_file is not readable" >&2
+		exit 2
+	fi
+	dump=$(cat "$dump_file")
+else
+	dump=$("$LSREG" -dump 2>/dev/null)
+fi
 
-# Sections run from a bundle-id line to the next separator; path lines
-# precede identifier lines, so the whole section must be buffered
-# before deciding it is ours.
-section=$(printf '%s\n' "$dump" | awk -v id="$APP_ID" '
-	/^-+$/ {
-		if (is_ours) out = out buf
-		buf = ""
+# One record per registration section:
+# <path>\t<schemes>\t<claimed UTIs>
+# Sections are buffered whole: path lines precede the identifier line
+# inside each dump section, so ownership is only known after the
+# section is complete.
+records=$(printf '%s\n' "$dump" | awk -v id="$APP_ID" '
+	function flush() {
+		if (is_ours) {
+			n = split(buf, L, "\n")
+			for (i = 1; i <= n; i++) {
+				line = L[i]
+				if (index(line, "path:") == 1 && path == "") {
+					path = line
+					sub(/^path:[ \t]+/, "", path)
+					sub(/ \(0x[0-9a-f]+\)$/, "", path)
+				}
+				if (index(line, "claimed schemes:") == 1) {
+					v = line
+					sub(/^claimed schemes:[ \t]*/, "", v)
+					schemes = schemes " " v
+				}
+				if (index(line, "claimed UTIs:") == 1) {
+					v = line
+					sub(/^claimed UTIs:[ \t]*/, "", v)
+					utis = utis " " v
+				}
+			}
+			if (path != "") printf "%s\t%s\t%s\n", path, schemes, utis
+		}
 		is_ours = 0
-		next
+		buf = ""
+		path = ""
+		schemes = ""
+		utis = ""
 	}
+	/^-+$/ {flush(); next}
 	{
 		buf = buf $0 "\n"
 		if (index($0, "identifier:") && index($0, id)) is_ours = 1
 	}
-	END {if (is_ours) out = out buf; printf "%s", out}
+	END {flush()}
 ')
 
 report() { printf '%s\n' "$*"; }
 
-if [ -z "$section" ]; then
+if [ -z "$records" ]; then
 	report "result: NOT REGISTERED — no LaunchServices entry for $APP_ID"
 	report "fix: install the bundle (see docs/macos-handler.md) and register it with lsregister -f"
 	exit 1
 fi
 
-paths=$(printf '%s\n' "$section" | grep '^path:' | sed 's/^path: *//' | sed 's/ (0x[0-9a-f]*)$//' | sort -u)
-live=""
-dead=""
-for p in $paths; do
-	if [ -d "$p" ]; then
-		live="$live $p"
-	else
-		dead="$dead $p"
+found_live=0
+result=""
+while IFS="	" read -r path schemes utis; do
+	[ -n "$path" ] || continue
+	if [ ! -d "$path" ]; then
+		report "warning: dangling registration (bundle gone): $path"
+		continue
 	fi
-done
+	found_live=1
+	missing=""
+	for marker in "http:" "https:"; do
+		case $schemes in
+			*"$marker"*) ;;
+			*) missing="$missing $marker" ;;
+		esac
+	done
+	for marker in "public.html" "public.xhtml" "com.apple.default-app.web-browser"; do
+		case $utis in
+			*"$marker"*) ;;
+			*) missing="$missing $marker" ;;
+		esac
+	done
+	if [ -z "$missing" ]; then
+		result="eligible at $path"
+		break
+	fi
+	report "note: live path $path is missing claims:$missing"
+done <<EOF
+$records
+EOF
 
-schemes=$(printf '%s\n' "$section" | grep 'claimed schemes:' | sed 's/claimed schemes: *//' | sort -u | tr '\n' ' ')
-utis=$(printf '%s\n' "$section" | grep 'claimed UTIs:' | sed 's/claimed UTIs: *//' | sort -u | tr '\n' ' ')
-role=$(printf '%s\n' "$section" | grep -m1 'roles:')
-
-report "registered paths: $paths"
-[ -n "$dead" ] && report "warning: dangling registrations (bundle gone): $dead"
-report "live paths:$live"
-report "claimed schemes: $schemes"
-report "claimed UTIs: $utis"
-report "$role"
-
-missing=""
-for marker in "com.apple.default-app.web-browser" "public.html" "public.xhtml"; do
-	printf '%s\n' "$utis" | grep -q "$marker" || missing="$missing $marker"
-done
-if [ -n "$missing" ]; then
-	report "result: NOT ELIGIBLE — missing document-type claims:$missing"
-	report "fix: rebuild with the browser-category CFBundleDocumentTypes (see docs/macos-handler.md), reinstall, re-register"
+if [ "$found_live" -eq 0 ]; then
+	report "result: NOT ELIGIBLE — no registration points at an existing bundle"
 	exit 1
 fi
-[ -z "$live" ] && report "result: NOT ELIGIBLE — no registration points at an existing bundle"
-[ -n "$live" ] || exit 1
 
-printf '%s\n' "$section" | grep -q 'claimed schemes:.*http:' || {
-	report "result: NOT ELIGIBLE — http scheme not claimed"
-	exit 1
-}
-report "result: metadata-eligible (claims browser category + html/xhtml + http scheme at a live path)"
-report "note: final dropdown membership is System Settings UI behavior; confirm visually and record as user-attested evidence"
+if [ -n "$result" ]; then
+	report "result: metadata-eligible ($result)"
+	report "note: final dropdown membership is System Settings UI behavior; confirm visually and record as user-attested evidence"
+	exit 0
+fi
+report "result: NOT ELIGIBLE — no live registration claims the full browser metadata set"
+report "fix: rebuild with the browser-category CFBundleDocumentTypes (see docs/macos-handler.md), reinstall, re-register"
+exit 1
