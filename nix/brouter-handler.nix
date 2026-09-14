@@ -14,7 +14,6 @@
   buildGoModule,
   replaceVars,
   symlinkJoin,
-  runCommand,
   go_1_27,
   coreutils,
   dbus,
@@ -39,48 +38,34 @@ let
   };
 in
 if stdenv.isDarwin then
-  let
-    # The native event shim, compiled by the darwin stdenv toolchain with
-    # the target pinned so the output is deterministically arm64.
-    shim = stdenv.mkDerivation {
-      pname = "brouter-shim";
-      inherit version;
-      src = ../native/macos;
-      dontConfigure = true;
-      buildPhase = ''
-        mkdir -p $out/bin
-        cc -arch arm64 -fobjc-arc \
-          -framework Foundation -framework CoreServices \
-          -o $out/bin/BrouterHandler main.m
-      '';
-      installPhase = "runHook postInstall";
-    };
+  # One derivation holding regular files: a bundle whose Info.plist or
+  # Mach-O contents are symlinks (as symlinkJoin produces) fails the
+  # code seal, so the app tree is copied, then signed after assembly.
+  stdenv.mkDerivation {
+    pname = "brouter-handler";
+    inherit version;
+    src = ../native/macos;
 
-    app = runCommand "brouter-handler-app-${version}"
-      {
-        passthru.appPath = "Applications/BrouterHandler.app";
-      }
-      ''
-        app=$out/Applications/BrouterHandler.app
-        mkdir -p $app/Contents/MacOS
-        install -Dm644 ${../native/macos/Info.plist} $app/Contents/Info.plist
-        install -m755 ${shim}/bin/BrouterHandler $app/Contents/MacOS/BrouterHandler
-        install -m755 ${brouter}/bin/brouter $app/Contents/MacOS/brouter
-        # Ad-hoc signature: LaunchServices refuses unsigned binaries.
-        /usr/bin/codesign --force --sign - $app
-      '';
-  in
-  symlinkJoin {
-    name = "brouter-handler-${version}";
-    paths = [
-      brouter
-      app
-    ];
-    meta = with lib; {
-      description = "brouter CLI and macOS URL handler app";
-      platforms = platforms.darwin;
-      mainProgram = "brouter";
-    };
+    dontConfigure = true;
+
+    buildPhase = ''
+      app=$out/Applications/BrouterHandler.app
+      mkdir -p $app/Contents/MacOS $out/bin
+
+      install -Dm644 Info.plist $app/Contents/Info.plist
+      cc -arch arm64 -fobjc-arc \
+        -framework Foundation -framework CoreServices \
+        -o $app/Contents/MacOS/BrouterHandler main.m
+      install -m755 ${brouter}/bin/brouter $app/Contents/MacOS/brouter
+      install -m755 ${brouter}/bin/brouter $out/bin/brouter
+    '';
+    # The stdenv fixup phase strips binaries AFTER buildPhase, which
+    # would invalidate any earlier signature; signing in postFixup is
+    # therefore the final mutation of the sealed tree.
+    postFixup = ''
+      /usr/bin/codesign --force --sign - $out/Applications/BrouterHandler.app
+    '';
+    installPhase = "runHook postInstall";
   }
 else
   symlinkJoin {

@@ -74,6 +74,13 @@ func TestDarwinFlakePackageShipsAppAndCLI(t *testing.T) {
 	} {
 		assertArm64AndSigned(t, binary)
 	}
+
+	// The whole bundle must carry a valid seal: symlinked bundle
+	// contents invalidate it ("a sealed resource is missing or
+	// invalid") even when every binary verifies on its own.
+	if out, err := exec.Command("codesign", "--verify", "--deep", "--strict", app).CombinedOutput(); err != nil {
+		t.Errorf("bundle signature invalid: %v\n%s", err, out)
+	}
 }
 
 func assertBundleArtifact(t *testing.T, app, artifact string) {
