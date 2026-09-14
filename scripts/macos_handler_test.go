@@ -228,11 +228,13 @@ func assertForwardedArgv(t *testing.T, argv []string, rawURL string) {
 }
 
 func userConfigPath() string {
+	// The standardized Unix location: $HOME/.config on macOS too
+	// (TASK-0020). os.UserHomeDir reads $HOME, matching the shim.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, "Library", "Application Support", "brouter", "config.toml")
+	return filepath.Join(home, ".config", "brouter", "config.toml")
 }
 
 func assertUserConfigPath(t *testing.T, got string) {
@@ -260,5 +262,73 @@ func TestMacosHandlerBundleTargetsArm64(t *testing.T) {
 		if archs := strings.Fields(string(out)); len(archs) != 1 || archs[0] != "arm64" {
 			t.Errorf("%s architectures = %q, want exactly [arm64]", binary, string(out))
 		}
+	}
+}
+
+func TestMacosHandlerShimResolvesConfigPerContract(t *testing.T) {
+	skipUnlessDarwin(t)
+
+	// The built shim spawns the embedded real brouter; with no config
+	// file at the resolved location brouter's own error names the path
+	// it was given, so the handler log doubles as the resolution
+	// evidence. Each case pins one contract clause.
+	cases := []struct {
+		name       string
+		home       string
+		xdg        string
+		wantInLog  string
+		shimErrors bool
+	}{
+		{"absolute xdg wins", "IGNORED", "/tmp/bh-xdg-abs", "/tmp/bh-xdg-abs/brouter/config.toml", false},
+		{"relative xdg falls back", "/tmp/bh-home-rel", "relative/xdg", "/tmp/bh-home-rel/.config/brouter/config.toml", false},
+		{"unset xdg uses home", "/tmp/bh-home-unset", "", "/tmp/bh-home-unset/.config/brouter/config.toml", false},
+		{"missing home is visible", "", "", "cannot determine the user config directory", true},
+	}
+
+	app := filepath.Join("..", "dist", "BrouterHandler.app")
+	if _, err := os.Stat(filepath.Join(app, "Contents/MacOS/BrouterHandler")); err != nil {
+		t.Fatalf("bundle not built: %v", err)
+	}
+	handlerBin := filepath.Join(app, "Contents/MacOS/BrouterHandler")
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logFile := filepath.Join(t.TempDir(), "handler.log")
+			env := []string{
+				"PATH=/usr/bin:/bin",
+				"BRROUTER_HANDLER_LOG=" + logFile,
+			}
+			if tc.home == "IGNORED" {
+				env = append(env, "HOME=/unused-home")
+			} else {
+				env = append(env, "HOME="+tc.home)
+			}
+			env = append(env, "XDG_CONFIG_HOME="+tc.xdg)
+
+			run := exec.Command(handlerBin, "https://contract.example/")
+			run.Env = env
+			_ = run.Run() // brouter fails on the missing config; that is the evidence
+
+			// The shim exits after spawning; the child writes its
+			// diagnostics afterwards. Poll briefly instead of racing.
+			log := ""
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				data, err := os.ReadFile(logFile)
+				if err == nil && strings.Contains(string(data), tc.wantInLog) {
+					log = string(data)
+					break
+				}
+				if time.Now().After(deadline) {
+					data := []byte("<missing>")
+					if data2, err := os.ReadFile(logFile); err == nil {
+						data = data2
+					}
+					t.Fatalf("handler log does not mention %q:\n%s", tc.wantInLog, data)
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			_ = log
+		})
 	}
 }

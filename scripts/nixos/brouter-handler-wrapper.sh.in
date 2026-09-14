@@ -12,7 +12,26 @@ brouter="@brouter@"
 mkdir_bin="@mkdir@"
 date_bin="@date@"
 dbus_send="@dbus_send@"
-config="${XDG_CONFIG_HOME:-${HOME:-}/.config}/brouter/config.toml"
+# Same config contract as the Go resolver: absolute $XDG_CONFIG_HOME
+# wins; a relative or unset value falls back to $HOME/.config; missing
+# HOME with no absolute XDG fails visibly before any launch.
+config_root=""
+case "${XDG_CONFIG_HOME:-}" in
+	/*) config_root="$XDG_CONFIG_HOME" ;;
+esac
+if [ -z "$config_root" ]; then
+	if [ -z "${HOME:-}" ]; then
+		echo "brouter-handler: cannot determine the user config directory: set XDG_CONFIG_HOME to an absolute path, or set HOME" >&2
+		"$dbus_send" --session --dest=org.freedesktop.Notifications --type=method_call \
+			/org/freedesktop/Notifications org.freedesktop.Notifications.Notify \
+			string:"brouter" uint32:0 string:"dialog-warning" \
+			string:"brouter handler failed" string:"no config directory" \
+			int32:5000 >/dev/null 2>&1 || true
+		exit 2
+	fi
+	config_root="$HOME/.config"
+fi
+config="$config_root/brouter/config.toml"
 state_dir="${XDG_STATE_HOME:-${HOME:-}/.local/state}/brouter"
 log="$state_dir/handler.log"
 

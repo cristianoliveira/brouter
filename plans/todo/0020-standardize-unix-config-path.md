@@ -24,4 +24,3 @@ The CLI and GUI handlers resolve different default configuration locations on ma
 
 ## Notes
 Reserved task ID 0020 because TASK-0017 through TASK-0019 are reserved for the nix-darwin planning set.
-
