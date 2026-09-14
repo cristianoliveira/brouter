@@ -1,7 +1,7 @@
 ---
 id: TASK-0012
 title: Support explicit Brave and Chrome profiles
-status: doing
+status: done
 depends_on: [TASK-0011]
 tags: [profiles]
 ---

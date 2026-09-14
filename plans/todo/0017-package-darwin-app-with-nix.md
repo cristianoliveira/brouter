@@ -1,7 +1,7 @@
 ---
 id: TASK-0017
 title: Package the macOS app through the Nix flake
-status: todo
+status: doing
 depends_on: [TASK-0013, TASK-0014]
 priority: normal
 tags: [nix, macos, packaging]
