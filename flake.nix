@@ -1,7 +1,8 @@
-# Development environment only. Runtime packaging (flake package, desktop
-# handler) belongs to the platform deliverables, not here.
+# Development shell plus the NixOS/Sway desktop handler package
+# (`nix build .#brouter-handler`). The package carries the desktop
+# entry and wrapper; routing logic stays in the Go binary.
 {
-  description = "brouter development shell";
+  description = "brouter development shell and desktop handler package";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
@@ -24,8 +25,14 @@
             go_1_27
             golangci-lint
             gnumake
+            desktop-file-utils
           ];
         };
+      });
+
+      packages = forAllSystems (pkgs: {
+        brouter-handler = pkgs.callPackage ./nix/brouter-handler.nix { src = self; };
+        default = self.packages.${pkgs.system}.brouter-handler;
       });
     };
 }

@@ -184,15 +184,6 @@ func waitForFile(t *testing.T, path string) string {
 	}
 }
 
-func readFileOrFatal(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", path, err)
-	}
-	return string(data)
-}
-
 // assertForwardedArgv locks the forwarding contract: the shim hands the
 // URL to the embedded brouter as [open, --config, <abs user config>,
 // <url>] — structured arguments, never a shell. The config path is
@@ -228,15 +219,6 @@ func assertUserConfigPath(t *testing.T, got string) {
 	if got != want {
 		t.Errorf("config arg = %q, want %q", got, want)
 	}
-}
-
-func readArgvFile(t *testing.T, path string) []string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("cannot read %s: %v", path, err)
-	}
-	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 }
 
 func TestMacosHandlerBundleTargetsArm64(t *testing.T) {
