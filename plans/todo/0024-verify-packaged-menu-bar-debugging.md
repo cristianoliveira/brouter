@@ -1,7 +1,7 @@
 ---
 id: TASK-0024
 title: Verify packaged macOS menu-bar and diagnostic behavior
-status: todo
+status: doing
 depends_on: [TASK-0022, TASK-0023]
 tags: [macos, acceptance, packaging]
 ---
