@@ -53,6 +53,9 @@ func TestMacosHandlerInstallsMenuBarPresence(t *testing.T) {
 		// absence is a retryable state, not a failure.
 		if data, err := os.ReadFile(env.logPath); err == nil &&
 			strings.Contains(string(data), "menu bar presence installed") {
+			if strings.Contains(string(data), "menu icon asset missing") {
+				t.Fatalf("status item fell back to the system symbol; the selected menu icon asset did not load")
+			}
 			break
 		}
 		if time.Now().After(deadline) {

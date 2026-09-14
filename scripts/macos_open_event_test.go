@@ -69,6 +69,13 @@ func newOpenEventEnv(t *testing.T, distBundle string) *openEventEnv {
 	if err := os.WriteFile(filepath.Join(env.testApp, "Contents/MacOS/BrouterHandler"), data, 0o755); err != nil {
 		t.Fatal(err)
 	}
+
+	// Bundle Resources (the menu icon assets) must ride along: the shim
+	// loads its status-item image from the main bundle.
+	if err := os.CopyFS(filepath.Join(env.testApp, "Contents/Resources"),
+		os.DirFS(filepath.Join(distBundle, "Contents/Resources"))); err != nil {
+		t.Fatal(err)
+	}
 	installRecorderStub(t, env.work, env.testApp, env.stubLog)
 
 	// Ad-hoc re-sign: the stub replaced sealed content.

@@ -1,6 +1,7 @@
 package scripts
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,6 +65,31 @@ func TestMacosHandlerSourceShipsNoDefaultsOrRegistrationWrites(t *testing.T) {
 	for _, forbidden := range []string{"NSUserDefaults", "lsregister", "LSSetDefaultHandlerForURLScheme", "system(", "popen("} {
 		if strings.Contains(string(source), forbidden) {
 			t.Errorf("shim source contains forbidden %q", forbidden)
+		}
+	}
+}
+
+// TestMacosHandlerShipsMenuIconAsset locks the user-selected menu icon
+// (TASK-0026 candidate C) into the bundle: 1x/2x template PNGs at the
+// expected pixel dimensions in Contents/Resources.
+func TestMacosHandlerShipsMenuIconAsset(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("menu icon asset is macOS-only")
+	}
+	resources := filepath.Join("..", "dist", "BrouterHandler.app", "Contents", "Resources")
+	for name, want := range map[string]int{
+		"menu-icon.png":    16,
+		"menu-icon@2x.png": 32,
+	} {
+		png := filepath.Join(resources, name)
+		out, err := exec.Command("sips", "-g", "pixelWidth", "-g", "pixelHeight", png).Output()
+		if err != nil {
+			t.Errorf("%s missing or unreadable: %v", name, err)
+			continue
+		}
+		if !strings.Contains(string(out), fmt.Sprintf("pixelWidth: %d", want)) ||
+			!strings.Contains(string(out), fmt.Sprintf("pixelHeight: %d", want)) {
+			t.Errorf("%s pixel size = %s, want %dx%d", name, strings.TrimSpace(string(out)), want, want)
 		}
 	}
 }

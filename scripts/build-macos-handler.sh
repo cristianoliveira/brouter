@@ -32,8 +32,13 @@ clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreService
 	-o "$app/Contents/MacOS/BrouterHandler" \
 	native/macos/main.m
 
-echo "== assembling bundle metadata"
+	echo "== assembling bundle metadata"
+mkdir -p "$app/Contents/Resources"
 cp native/macos/Info.plist "$app/Contents/Info.plist"
+# User-selected menu icon (TASK-0026 candidate C): 1x/2x template
+# monochrome PNGs; see docs/assets/menu-bar-icon-previews/.
+cp native/macos/menu-icon.png "$app/Contents/Resources/menu-icon.png"
+cp native/macos/menu-icon@2x.png "$app/Contents/Resources/menu-icon@2x.png"
 
 echo "== ad-hoc signing (unsigned binaries are refused by LaunchServices)"
 codesign --force --sign - "$app" >/dev/null
