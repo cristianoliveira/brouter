@@ -77,6 +77,47 @@ brouter validate --config ~/.config/brouter/config.toml
 - [ ] BrouterHandler appears in the Default Web Browser dropdown
 - [ ] user selects it explicitly; dropdown/default change is theirs
 
+Benign external URL delivery (visible destination = example.com
+renders):
+
+```sh
+open "https://example.com/"   # cold: selected browser launches
+open "https://example.com/"   # warm: repeat while the browser runs
+```
+
+- [ ] cold: the selected browser launches and example.com renders
+- [ ] warm: the repeated link opens in the running session, page
+      renders again
+
+Invalid config (visible failure, no silent launch):
+
+```sh
+printf 'default = "ghost"\n\n[browsers.ghost]\nbrowser = "brave"\nprofile = "does-not-exist"\n' \
+  > ~/.config/brouter/config.toml
+brouter validate --config ~/.config/brouter/config.toml   # exits nonzero
+open "https://example.com/"
+tail -3 "${XDG_STATE_HOME:-$HOME/.local/state}/brouter/handler.log"
+```
+
+- [ ] `brouter validate` exits nonzero naming the problem
+- [ ] the GUI-originated link produces a notification and a handler
+      log entry; no browser launches
+
+Missing browser executable (validate passes, launch fails visibly):
+
+```sh
+printf 'default = "ghost"\n\n[browsers.ghost]\ncommand = "/nonexistent/browser %%u"\n' \
+  > ~/.config/brouter/config.toml
+brouter validate --config ~/.config/brouter/config.toml   # may pass
+open "https://example.com/"
+tail -3 "${XDG_STATE_HOME:-$HOME/.local/state}/brouter/handler.log"
+```
+
+- [ ] handler log records the launch failure (status line); the
+      bounded notification appears; nothing launches silently
+
+Restore the user's real config after these two failure cases.
+
 ### Case B — update
 
 ```sh
@@ -90,6 +131,23 @@ readlink "/Applications/Nix Apps/BrouterHandler.app"   # new store path
       desktop identity; dropdown state unchanged unless the user
       changed it)
 - [ ] `~/.config/brouter/config.toml` untouched
+
+Post-update forwarding proof:
+
+```sh
+before=$(readlink "/Applications/Nix Apps/BrouterHandler.app")   # capture pre-update
+after=$(readlink "/Applications/Nix Apps/BrouterHandler.app")
+[ "$before" != "$after" ] && echo "link moved to the new build"
+"$after/Contents/MacOS/brouter" validate --config ~/.config/brouter/config.toml
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -dump | grep "path:.*BrouterHandler.app"
+open "https://example.com/"   # forwarded by the NEW embedded binary
+```
+
+- [ ] link target moved (`before != after`)
+- [ ] the NEW embedded CLI validates the config
+- [ ] LS registrations reference only live paths (no stale ones)
+- [ ] a clicked URL is delivered by the updated bundle (page renders)
 
 ### Case C — remove / restore
 
@@ -109,7 +167,28 @@ defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandler
 - [ ] `~/.config/brouter/config.toml` still present (removal never
       deletes user config)
 
-## 4. Known baseline finding
+Ordinary links after restoration:
+
+```sh
+open "https://example.com/"   # must open in the RESTORED default
+```
+
+- [ ] the link opens in the restored default browser (Chrome today),
+      not BrouterHandler
+
+## Signing, Gatekeeper, and distribution limits
+
+- The bundle is **ad-hoc signed**: valid on the machine that built it;
+  no Developer ID identity, no notarization. Other machines may need
+  `xattr -dr com.apple.quarantine` (or right-click → Open) for
+  downloaded/copied bundles.
+- **Same-machine only**: the Nix store paths, the `/Applications/
+  Nix Apps` link, and the LaunchServices registration are per-machine.
+  Transferring the bundle or store paths to another machine, or
+  redistributing cached builds, is unsupported — rebuild from the
+  flake on the target machine instead.
+
+## 5. Known baseline finding
 
 The manually installed `/Applications/BrouterHandler.app` predates the
 PR20 metadata fix (scheme-only, absent from the dropdown). Case A's
