@@ -295,3 +295,58 @@ func TestNixosHandlerWrapperWorksWithEmptyPath(t *testing.T) {
 		})
 	}
 }
+
+func TestNixosHandlerWrapperFallsBackFromRelativeXDG(t *testing.T) {
+	// A relative XDG_CONFIG_HOME is not a usable config root: the
+	// wrapper must fall back to $HOME/.config exactly like the Go
+	// resolver, not pass the relative path to brouter.
+	tmp := t.TempDir()
+	stub := writeRecordingStub(t, tmp, 0)
+	wrapper := filepath.Join(tmp, "brouter-handler")
+	if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+		"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	home := t.TempDir()
+	env := append(os.Environ(), "HOME="+home,
+		"XDG_CONFIG_HOME=relative/xdg",
+		"XDG_STATE_HOME="+filepath.Join(home, "state"))
+	if out, status := runWrapper(t, wrapper, env, "https://xdg.example/"); status != 0 {
+		t.Fatalf("wrapper status = %d, want 0\n%s", status, out)
+	}
+
+	argv := readArgvFile(t, filepath.Join(tmp, "stub-argv.log"))
+	wantConfig := filepath.Join(home, ".config", "brouter", "config.toml")
+	if len(argv) != 4 || argv[2] != wantConfig {
+		t.Errorf("stub argv = %q, want config arg %q", argv, wantConfig)
+	}
+}
+
+func TestNixosHandlerWrapperFailsVisiblyWithoutHomeOrXDG(t *testing.T) {
+	// Missing HOME with no absolute XDG must fail visibly before any
+	// launch: no spawn, non-zero status, and a message naming the
+	// environment variables to set.
+	tmp := t.TempDir()
+	stub := writeRecordingStub(t, tmp, 0)
+	stubLog := filepath.Join(tmp, "stub-argv.log")
+	wrapper := filepath.Join(tmp, "brouter-handler")
+	if err := os.WriteFile(wrapper, []byte(renderWrapper(t,
+		"nixos/brouter-handler-wrapper.sh.in", stub)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	env := append(os.Environ(), "HOME=", "XDG_CONFIG_HOME=",
+		"XDG_STATE_HOME="+filepath.Join(tmp, "state"))
+	out, status := runWrapper(t, wrapper, env, "https://homeless.example/")
+
+	if status == 0 {
+		t.Fatalf("wrapper status = 0, want a visible failure")
+	}
+	if !strings.Contains(out, "cannot determine the user config directory") {
+		t.Errorf("output = %q, want the config-directory failure message", out)
+	}
+	if _, err := os.Stat(stubLog); err == nil {
+		t.Error("stub was invoked despite unresolvable config directory")
+	}
+}

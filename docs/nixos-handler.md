@@ -18,8 +18,10 @@ nix build .#brouter-handler
 - `bin/brouter` — the CLI binary built from this repository.
 - `bin/brouter-handler` — the desktop-entry wrapper. Plumbing only: it
   resolves the config path exactly like the CLI
-  (`$XDG_CONFIG_HOME` or `$HOME/.config`, then `brouter/config.toml`)
-  and forwards structured arguments (`open --config <path> <url>`).
+  (`brouter/config.toml` under an **absolute** `$XDG_CONFIG_HOME`;
+  a relative or unset value falls back to `$HOME/.config`; missing
+  HOME with no absolute XDG fails visibly before any launch) and
+  forwards structured arguments (`open --config <path> <url>`).
 - `share/applications/brouter-handler.desktop` — declares
   `x-scheme-handler/http` and `x-scheme-handler/https` with
   `Exec=<package>/bin/brouter-handler %u` (absolute, no shell, single
@@ -50,7 +52,24 @@ registration made through the declarative options survives rebuilds.
 The `Exec` path is the immutable store path of that specific build and
 is regenerated with each rebuild; the entry itself is reinstalled with
 the package. No user config is ever bound to a store hash: the wrapper
-resolves the config from the environment at runtime.
+resolves the config from the environment at runtime, independent of
+any shell startup files.
+
+## Config location contract (TASK-0020)
+
+`brouter/config.toml` beneath one root, identical for the CLI and both
+desktop handlers:
+
+1. `--config <path>` always wins.
+2. `$XDG_CONFIG_HOME` when it is set to an **absolute** path.
+3. Otherwise `$HOME/.config` — including on macOS; there is no
+   Application Support fallback and no automatic migration. If you
+   kept your config at the old macOS location, move it yourself:
+
+   ```sh
+   mkdir -p ~/.config/brouter
+   mv ~/Library/"Application Support"/brouter/config.toml ~/.config/brouter/
+   ```
 
 ## Failure channel
 

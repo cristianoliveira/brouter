@@ -20,7 +20,24 @@ make macos-handler        # produces dist/BrouterHandler.app
   sequential URLs are each forwarded in order.
 - Spawns the embedded brouter as `brouter open --config <user config>
   <url>` — structured argv, never a shell, independent of working
-  directory and PATH.
+  directory and PATH. The config path follows the standardized Unix
+  contract (TASK-0020): absolute `$XDG_CONFIG_HOME` wins, otherwise
+  `$HOME/.config/brouter/config.toml` — also on macOS; there is no
+  Application Support fallback and no automatic migration. If your
+  config lives at the old macOS location, move it:
+
+  ```sh
+  mkdir -p ~/.config/brouter
+  mv ~/Library/"Application Support"/brouter/config.toml ~/.config/brouter/
+  ```
+
+  GUI caveat: apps launched by LaunchServices do not inherit shell
+  startup variables, so an `XDG_CONFIG_HOME` exported only in a shell
+  rc file is invisible to the handler — the effective default is then
+  `$HOME/.config/brouter/config.toml`. To make XDG apply to GUI
+  launches as well, set it in a launchd-visible way (for example
+  `launchctl setenv XDG_CONFIG_HOME /absolute/path`) and rely on the
+  same absolute path everywhere.
 - Appends every event and failure to a diagnostics log:
   `~/Library/Logs/brouter-handler.log` (override with
   `BRROUTER_HANDLER_LOG` for testing).

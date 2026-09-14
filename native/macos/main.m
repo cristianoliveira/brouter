@@ -25,10 +25,25 @@ static NSString *HandlerLogPath(void) {
 }
 
 static NSString *ConfigPath(void) {
-	// Same location the brouter CLI resolves via os.UserConfigDir:
-	// absolute, independent of working directory or PATH.
-	return [NSHomeDirectory() stringByAppendingPathComponent:
-		@"Library/Application Support/brouter/config.toml"];
+	// Same contract as the Go resolver (internal/infra/config): absolute
+	// $XDG_CONFIG_HOME wins; otherwise $HOME/.config — on macOS too, so
+	// GUI launches without shell startup environment resolve the same
+	// location as the CLI. There is no legacy Application Support
+	// fallback. Returns nil when no root can be determined; callers
+	// must surface that visibly.
+	NSString *xdg = [[[NSProcessInfo processInfo] environment] objectForKey:@"XDG_CONFIG_HOME"];
+	// Contract is $HOME, so read the environment variable — not
+	// NSHomeDirectory, which reports the passwd home and would ignore
+	// the very variable the resolver contract names.
+	NSString *home = [[[NSProcessInfo processInfo] environment] objectForKey:@"HOME"];
+	if (xdg.length > 0 && [xdg hasPrefix:@"/"]) {
+		return [xdg stringByAppendingPathComponent:@"brouter/config.toml"];
+	}
+	if (home.length == 0) {
+		return nil;
+	}
+	return [[home stringByAppendingPathComponent:@".config"]
+		stringByAppendingPathComponent:@"brouter/config.toml"];
 }
 
 static NSString *EmbeddedBrouterPath(void) {
@@ -63,6 +78,12 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 	NSString *brouter = EmbeddedBrouterPath();
 	NSString *config = ConfigPath();
 	NSString *log = HandlerLogPath();
+
+	if (config == nil) {
+		AppendLog(@"error: cannot determine the user config directory: "
+			@"set $XDG_CONFIG_HOME to an absolute path, or set $HOME");
+		return;
+	}
 
 	if (![[NSFileManager defaultManager] isExecutableFileAtPath:brouter]) {
 		AppendLog([NSString stringWithFormat:@"error: embedded brouter missing at %@", brouter]);

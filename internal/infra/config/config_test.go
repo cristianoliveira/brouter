@@ -313,22 +313,71 @@ func TestLoadDefaultUsesTheDocumentedLocation(t *testing.T) {
 	}
 }
 
-func TestDefaultPathUsesUserConfigDir(t *testing.T) {
-	// Given the platform user config directory, when the default path is
-	// computed, it is brouter/config.toml beneath it; without a config
-	// directory the failure is visible.
+func TestDefaultPathResolvesPerContract(t *testing.T) {
+	// The Unix config contract, identical on macOS and Linux:
+	// --config wins (covered by the precedence tests); otherwise
+	// $XDG_CONFIG_HOME/brouter/config.toml only when XDG is absolute;
+	// a relative or unset XDG falls back to $HOME/.config; missing HOME
+	// with no absolute XDG is a visible error. There is no fallback to
+	// the old macOS Application Support location.
+	cases := []struct {
+		name    string
+		xdg     string
+		home    string
+		want    string
+		wantErr string
+	}{
+		{"unset xdg uses home", "", "/home/u", "/home/u/.config/brouter/config.toml", ""},
+		{"absolute xdg wins", "/cfg", "/home/u", "/cfg/brouter/config.toml", ""},
+		{"relative xdg falls back", "cfg", "/home/u", "/home/u/.config/brouter/config.toml", ""},
+		{"dot-relative xdg falls back", "./cfg", "/home/u", "/home/u/.config/brouter/config.toml", ""},
+		{"absolute xdg needs no home", "/cfg", "", "/cfg/brouter/config.toml", ""},
+		{"missing home is visible", "", "", "", "XDG_CONFIG_HOME"},
+		{"relative xdg with missing home is visible", "cfg", "", "", "HOME"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path, err := defaultPath(tc.xdg, tc.home)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("defaultPath(%q, %q) succeeded, want visible failure", tc.xdg, tc.home)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %q, want it to mention %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("defaultPath(%q, %q) failed: %v", tc.xdg, tc.home, err)
+			}
+			if path != tc.want {
+				t.Errorf("defaultPath(%q, %q) = %q, want %q", tc.xdg, tc.home, path, tc.want)
+			}
+		})
+	}
+}
+
+func TestDefaultPathFollowsTheEnvironment(t *testing.T) {
+	// The environment-facing entry point applies the same contract.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	path, err := DefaultPath()
 	if err != nil {
-		t.Skipf("no user config dir on this host: %v", err)
+		t.Fatalf("DefaultPath failed: %v", err)
 	}
-	if !strings.HasSuffix(filepath.ToSlash(path), "brouter/config.toml") {
-		t.Errorf("default path = %q, want brouter/config.toml beneath the user config dir", path)
+	if want := filepath.Join(home, ".config", "brouter", "config.toml"); path != want {
+		t.Errorf("default path = %q, want %q", path, want)
 	}
 
-	t.Setenv("HOME", "")
-	t.Setenv("XDG_CONFIG_HOME", "")
-	if _, err := DefaultPath(); err == nil {
-		t.Error("DefaultPath succeeded without any config dir, want visible failure")
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	path, err = DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath failed: %v", err)
+	}
+	if want := filepath.Join(xdg, "brouter", "config.toml"); path != want {
+		t.Errorf("default path = %q, want %q", path, want)
 	}
 }
 

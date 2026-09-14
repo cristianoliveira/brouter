@@ -68,15 +68,30 @@ type Config struct {
 	Rules   []domain.Rule
 }
 
-// DefaultPath returns the one documented user configuration location per
-// OS: <user config dir>/brouter/config.toml. Failures are visible; there
-// are no implicit fallback locations and no merging.
+// DefaultPath returns the one documented Unix user configuration
+// location: brouter/config.toml beneath the user config root. The root
+// is $XDG_CONFIG_HOME only when it is set to an absolute path;
+// otherwise it is $HOME/.config — on macOS and Linux alike, so GUI
+// invocations without shell startup environment resolve the same
+// location. A relative XDG value falls back instead of failing; a
+// missing HOME with no absolute XDG is a visible error. There are no
+// implicit fallback locations (notably none in the macOS Application
+// Support tree), no merging, and no automatic migration.
 func DefaultPath() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine user config directory: %w", err)
+	return defaultPath(os.Getenv("XDG_CONFIG_HOME"), os.Getenv("HOME"))
+}
+
+func defaultPath(xdgConfigHome, home string) (string, error) {
+	if xdgConfigHome != "" && filepath.IsAbs(xdgConfigHome) {
+		return filepath.Join(xdgConfigHome, "brouter", "config.toml"), nil
 	}
-	return filepath.Join(base, "brouter", "config.toml"), nil
+	if home == "" {
+		return "", fmt.Errorf(
+			"cannot determine the user config directory: set $XDG_CONFIG_HOME to an absolute path, or set $HOME (got XDG=%q HOME=%q)",
+			xdgConfigHome, home,
+		)
+	}
+	return filepath.Join(home, ".config", "brouter", "config.toml"), nil
 }
 
 // LoadDefault loads the configuration from DefaultPath, the documented
