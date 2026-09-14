@@ -133,6 +133,33 @@ If the app is missing from the Default Web Browser dropdown:
    from the html/xhtml document types at a live path. The final
    dropdown check is visual (System Settings) and user-attested.
 
+## Recent Activity (TASK-0023)
+
+The menu's Recent Activity submenu shows the last 20 events of this
+session, newest first: receipt of each URL event (or argv hand-off),
+preflight, and dispatch. Every entry is built from allowlisted fields
+— time, session-local request ID, entry point, event kind, optional
+error category — so URLs, hosts, query strings, profiles, and paths
+can never appear in the menu.
+
+What the menu can and cannot observe:
+
+- receipt: a URL event arrived (recorded before validation).
+- preflight failed: missing-embedded-binary or
+  unavailable-config-directory (directly observable shim-side).
+- dispatch started, outcome unknown: the child brouter was spawned.
+  Config validation, browser resolution, and page load happen in the
+  child and are not observable by the shim; they remain unknown here.
+- dispatch failed: spawn-failed (with errno), when the OS refused the
+  spawn itself.
+
+Clear Recent Activity empties the in-memory list only; it never
+touches diagnostic files and cannot cancel already-dispatched
+children. Reveal Config and Reveal Diagnostic Log open Finder
+selections for the already-resolved paths; they never create or
+overwrite files, and show "(missing)" when the target does not exist.
+There is no persistent activity history, no export, and no telemetry.
+
 ## Menu bar presence (TASK-0022)
 
 While running, the handler shows one menu-bar status item (a template
