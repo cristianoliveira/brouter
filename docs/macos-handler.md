@@ -13,6 +13,14 @@ Build (macOS only, from the repository root):
 make macos-handler        # produces dist/BrouterHandler.app
 ```
 
+Nix packaging (TASK-0017): `nix build .#brouter-handler` on Darwin
+produces the CLI at `result/bin/brouter` and the same app bundle at
+`result/Applications/BrouterHandler.app` — deterministic arm64,
+ad-hoc signed, with the dropdown-eligibility document types. Copy the
+bundle from `result/Applications/` (never the store path itself) to
+`/Applications` and follow the registration steps below. The Linux
+output of the same flake remains the desktop wrapper and entry.
+
 ## What it does
 
 - Declares http and https URL schemes in its Info.plist.
