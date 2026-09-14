@@ -105,8 +105,10 @@ while IFS="	" read -r path schemes utis; do
 		esac
 	done
 	if [ -z "$missing" ]; then
-		result="eligible at $path"
-		break
+		# First eligible live path wins, but scanning continues: the
+		# report promises diagnostics for every registration.
+		[ -z "$result" ] && result="eligible at $path"
+		continue
 	fi
 	report "note: live path $path is missing claims:$missing"
 done <<EOF
