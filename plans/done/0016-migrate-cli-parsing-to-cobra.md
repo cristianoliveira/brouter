@@ -1,7 +1,7 @@
 ---
 id: TASK-0016
 title: Migrate CLI parsing to Cobra
-status: doing
+status: done
 depends_on: [TASK-0011]
 priority: normal
 tags: []

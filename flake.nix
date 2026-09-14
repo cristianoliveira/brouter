@@ -30,9 +30,17 @@
         };
       });
 
-      packages = forAllSystems (pkgs: {
-        brouter-handler = pkgs.callPackage ./nix/brouter-handler.nix { src = self; };
-        default = self.packages.${pkgs.system}.brouter-handler;
-      });
+      # The package is intentionally NOT produced for x86_64-darwin:
+      # the Darwin handler is arm64-only (TASK-0017 scope).
+      packages = nixpkgs.lib.genAttrs
+        [
+          "x86_64-linux"
+          "aarch64-linux"
+          "aarch64-darwin"
+        ]
+        (system: {
+          brouter-handler = nixpkgs.legacyPackages.${system}.callPackage ./nix/brouter-handler.nix { src = self; };
+          default = self.packages.${system}.brouter-handler;
+        });
     };
 }
