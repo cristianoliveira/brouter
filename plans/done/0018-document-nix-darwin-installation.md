@@ -1,7 +1,7 @@
 ---
 id: TASK-0018
 title: Document declarative nix-darwin installation
-status: doing
+status: done
 depends_on: [TASK-0017]
 priority: normal
 tags: [nix-darwin, docs]

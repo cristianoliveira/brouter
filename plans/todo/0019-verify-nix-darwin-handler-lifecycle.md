@@ -1,7 +1,7 @@
 ---
 id: TASK-0019
 title: Verify the nix-darwin application lifecycle on macOS
-status: todo
+status: doing
 depends_on: [TASK-0017, TASK-0018]
 priority: normal
 tags: [nix-darwin, acceptance]
