@@ -41,6 +41,7 @@ These open decisions do not block the Go skeleton or isolated domain/config work
 - **Profiles:** TASK-0012 — optional Chrome/Brave profiles, with explicit support limits.
 - **Desktop integration:** TASK-0013–0014 — installable macOS and Linux handlers.
 - **Release evidence:** TASK-0015 — end-to-end acceptance and installable artifacts.
+- **nix-darwin installation:** TASK-0017–0019 — Darwin app derivation, minimal declarative installation instructions, and real install/update/removal evidence. Planning only; no implicit default-browser management or Intel support.
 
 ## Guardrail contract to implement
 `make check` is the one normal lint/type-and-test gate. It invokes the pinned `golangci-lint` configuration plus build and tests. The initial lint rules include `funlen` (100 lines per function) and `cyclop` (package average 5.0, per-function maximum 10). On success stdout is exactly `true`. On failure output begins with `false`, followed by bounded diagnostics, and exit status is nonzero. Hooks, watcher, and CI call this command. Formatting, go vet, race tests, coverage, security, and architecture checks have explicit separate commands and release enforcement; do not quietly expand the normal gate.
