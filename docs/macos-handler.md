@@ -42,6 +42,18 @@ validation failures still print to the same log before any launch.
    is manual and explicit: the bundle never requests handler status on
    its own, and brouter never changes the default silently.
 
+   **Status correction (PR18 defect follow-up):** the version of this
+   bundle merged in PR18 declared only URL schemes and did **not**
+   appear in the Default Web Browser dropdown on macOS 26 — that
+   instruction was unverified as written. LaunchServices populates the
+   dropdown from apps claiming html/xhtml document types alongside the
+   schemes (it derives the browser-category UTI itself; verified
+   against Finicky, whose registered claims show exactly this
+   pattern). The bundle now declares those document types; run
+   `scripts/probes/macos-dropdown-eligibility.sh` after reinstalling
+   to confirm the registered claims, then verify the dropdown
+   visually and record it as user-attested evidence.
+
 ## Restoration and uninstall
 
 The previous default browser is not modified by installing the bundle;
@@ -78,6 +90,23 @@ the arm64 Go binary). Running the bundle under Rosetta or on Intel is
 untested and unsupported. The bundle declares a minimum of macOS 13;
 older versions are untested. Linux and other platforms use their own
 delivery mechanisms and are out of scope for this handler.
+
+## Dropdown eligibility and repair
+
+If the app is missing from the Default Web Browser dropdown:
+
+1. `scripts/probes/macos-dropdown-eligibility.sh` — read-only report
+   of every registration (live and dangling), claimed schemes and
+   document types, and the specific missing markers. It never mutates
+   state.
+2. Rebuild (`make macos-handler`) and replace the installed copy (this
+   is a user action; brouter never touches an installed bundle).
+3. Re-register: `lsregister -f /Applications/BrouterHandler.app`
+   (targeted registration; never reset the whole LaunchServices
+   database).
+4. Re-run the probe: it must report the browser-category claim derived
+   from the html/xhtml document types at a live path. The final
+   dropdown check is visual (System Settings) and user-attested.
 
 ## Diagnostics
 
