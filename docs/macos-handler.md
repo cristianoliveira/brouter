@@ -30,6 +30,14 @@ make macos-handler        # produces dist/BrouterHandler.app
   mkdir -p ~/.config/brouter
   mv ~/Library/"Application Support"/brouter/config.toml ~/.config/brouter/
   ```
+
+  GUI caveat: apps launched by LaunchServices do not inherit shell
+  startup variables, so an `XDG_CONFIG_HOME` exported only in a shell
+  rc file is invisible to the handler — the effective default is then
+  `$HOME/.config/brouter/config.toml`. To make XDG apply to GUI
+  launches as well, set it in a launchd-visible way (for example
+  `launchctl setenv XDG_CONFIG_HOME /absolute/path`) and rely on the
+  same absolute path everywhere.
 - Appends every event and failure to a diagnostics log:
   `~/Library/Logs/brouter-handler.log` (override with
   `BRROUTER_HANDLER_LOG` for testing).

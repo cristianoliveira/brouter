@@ -273,16 +273,15 @@ func TestMacosHandlerShimResolvesConfigPerContract(t *testing.T) {
 	// it was given, so the handler log doubles as the resolution
 	// evidence. Each case pins one contract clause.
 	cases := []struct {
-		name       string
-		home       string
-		xdg        string
-		wantInLog  string
-		shimErrors bool
+		name      string
+		home      string
+		xdg       string
+		wantInLog string
 	}{
-		{"absolute xdg wins", "IGNORED", "/tmp/bh-xdg-abs", "/tmp/bh-xdg-abs/brouter/config.toml", false},
-		{"relative xdg falls back", "/tmp/bh-home-rel", "relative/xdg", "/tmp/bh-home-rel/.config/brouter/config.toml", false},
-		{"unset xdg uses home", "/tmp/bh-home-unset", "", "/tmp/bh-home-unset/.config/brouter/config.toml", false},
-		{"missing home is visible", "", "", "cannot determine the user config directory", true},
+		{"absolute xdg wins", "IGNORED", "/tmp/bh-xdg-abs", "/tmp/bh-xdg-abs/brouter/config.toml"},
+		{"relative xdg falls back", "/tmp/bh-home-rel", "relative/xdg", "/tmp/bh-home-rel/.config/brouter/config.toml"},
+		{"unset xdg uses home", "/tmp/bh-home-unset", "", "/tmp/bh-home-unset/.config/brouter/config.toml"},
+		{"missing home is visible", "", "", "cannot determine the user config directory"},
 	}
 
 	app := filepath.Join("..", "dist", "BrouterHandler.app")
