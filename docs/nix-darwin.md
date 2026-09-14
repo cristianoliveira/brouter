@@ -83,7 +83,9 @@ do not overwrite a config that already exists:
 ```sh
 cfg=~/.config/brouter/config.toml
 mkdir -p ~/.config/brouter
-if [ -e "$cfg" ]; then
+# -e misses a dangling symlink, so also test -L: any existing path
+# must be resolved manually, never silently replaced.
+if [ -e "$cfg" ] || [ -L "$cfg" ]; then
   echo "refusing: $cfg already exists — merge manually" >&2
 else
   ln -s ~/dotfiles/brouter/config.toml "$cfg"
@@ -106,17 +108,17 @@ rebuilding never changes the default browser:
      -f "/Applications/Nix Apps/BrouterHandler.app"
    ```
 
-2. Select it: System Settings → Desktop & Dock → Default web browser →
-   BrouterHandler.
+2. Validate your configuration the standard way:
 
-Validate your configuration the standard way before pointing anything
-at it:
+   ```sh
+   brouter validate --config ~/.config/brouter/config.toml
+   # config OK: targets 1, rules 0, default "…"
+   ```
 
-```sh
-brouter validate --config ~/.config/brouter/config.toml
-# config OK: targets 1, rules 0, default "…"
-```
-3. Check eligibility at any time (read-only):
+3. Select the handler: System Settings → Desktop & Dock → Default web
+   browser → BrouterHandler.
+
+4. Check eligibility at any time (read-only):
    `scripts/probes/macos-dropdown-eligibility.sh` from the repository.
 
 ## Rebuild and update semantics
