@@ -37,7 +37,7 @@ let
     doCheck = false;
   };
 in
-if stdenv.isDarwin then
+if stdenv.hostPlatform.isDarwin then
   # One derivation holding regular files: a bundle whose Info.plist or
   # Mach-O contents are symlinks (as symlinkJoin produces) fails the
   # code seal, so the app tree is copied, then signed after assembly.
