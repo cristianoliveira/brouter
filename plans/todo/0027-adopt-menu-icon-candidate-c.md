@@ -12,7 +12,7 @@ tags: [macos, icon]
 The current menu-bar item still uses a generic system branch symbol even though the user selected preview candidate C, a recognizable lowercase `b` with one continuous curved arrow stroke and an ascending stem.
 
 ## Outcome
-The existing macOS menu-bar item uses candidate B while preserving template monochrome rendering, accessibility, event handling, and package integrity.
+The existing macOS menu-bar item uses candidate C while preserving template monochrome rendering, accessibility, event handling, and package integrity.
 
 ## Acceptance criteria
 - [ ] Use the selected `candidate-c-ascending-stem.svg` from the preview deliverable as the sole source mark; do not add alternate marks or broad branding changes.

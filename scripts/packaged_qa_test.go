@@ -2,6 +2,7 @@ package scripts
 
 import (
 	"fmt"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,8 +82,8 @@ func TestMacosHandlerShipsMenuIconAsset(t *testing.T) {
 		"menu-icon.png":    16,
 		"menu-icon@2x.png": 32,
 	} {
-		png := filepath.Join(resources, name)
-		out, err := exec.Command("sips", "-g", "pixelWidth", "-g", "pixelHeight", png).Output()
+		pngPath := filepath.Join(resources, name)
+		out, err := exec.Command("sips", "-g", "pixelWidth", "-g", "pixelHeight", "-g", "hasAlpha", pngPath).Output()
 		if err != nil {
 			t.Errorf("%s missing or unreadable: %v", name, err)
 			continue
@@ -91,5 +92,45 @@ func TestMacosHandlerShipsMenuIconAsset(t *testing.T) {
 			!strings.Contains(string(out), fmt.Sprintf("pixelHeight: %d", want)) {
 			t.Errorf("%s pixel size = %s, want %dx%d", name, strings.TrimSpace(string(out)), want, want)
 		}
+		if !strings.Contains(string(out), "hasAlpha: yes") {
+			t.Errorf("%s must have an alpha channel: template icons are transparent outside the glyph", name)
+		}
+		assertInkCoverage(t, pngPath, want*want)
+	}
+}
+
+// assertInkCoverage decodes a PNG and fails when the glyph is missing
+// (blank/white canvas — the QA defect class) or when ink floods the
+// canvas. Ink = visibly dark, semi-opaque pixels; the monogram occupies
+// a healthy minority of a 16px tile.
+func assertInkCoverage(t *testing.T, assetPath string, totalPixels int) {
+	t.Helper()
+	f, err := os.Open(assetPath)
+	if err != nil {
+		t.Fatalf("opening %s: %v", assetPath, err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("decoding %s: %v", assetPath, err)
+	}
+	bounds := img.Bounds()
+	ink := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if a < 3<<8 {
+				continue // fully transparent
+			}
+			lum := (r*299 + g*587 + b*114) / 1000 >> 8
+			if lum < 128 {
+				ink++
+			}
+		}
+	}
+	ratio := float64(ink) / float64(totalPixels)
+	if ratio < 0.04 || ratio > 0.6 {
+		t.Errorf("%s ink coverage %.1f%% (%d/%d px) outside 4%%-60%%: blank canvas or flooded glyph",
+			assetPath, ratio*100, ink, totalPixels)
 	}
 }
