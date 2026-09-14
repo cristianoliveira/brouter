@@ -426,11 +426,15 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 		path = HandlerLogPath();
 	}
 	if (path == nil || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-		// Defensive: the menu already disables missing targets.
-		AppendLog(@"reveal requested but the file does not exist");
+		// Defensive: the menu already disables missing targets. Return
+		// without writing — AppendLog would CREATE the very file the
+		// reveal contract says must never be created.
 		return;
 	}
-	[[NSWorkspace sharedWorkspace] selectFile:path inFileViewerRootedAtPath:nil];
+	// activateFileViewerSelectingURLs takes nil-safe arguments and
+	// reveals without opening or modifying the file.
+	[[NSWorkspace sharedWorkspace]
+		activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:path]]];
 }
 
 - (void)clearActivity:(id)sender {
