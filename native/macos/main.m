@@ -1,14 +1,10 @@
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <CoreServices/CoreServices.h>
 #import <spawn.h>
 
 extern char **environ;
 
-// The Internet get-URL event. Stable four-char codes; some SDK header
-// configurations gate the canonical constants, so they are declared
-// here rather than depended on.
-enum { kInternetEventClass = 'GURL' };
-enum { kAEGetURL = 'GURL' };
 
 // BrouterHandler is a minimal macOS URL handler. macOS delivers http and
 // https URLs to it (Apple Events when running, argv when launched) and
@@ -91,7 +87,10 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 	}
 
 	for (NSString *url in urls) {
-		AppendLog([NSString stringWithFormat:@"forwarding %@", url]);
+		// Privacy: log the event, never the URL. Query strings and
+		// fragments can carry secrets; the browser's own history and
+		// the destination server are the record of what was opened.
+		AppendLog(@"forwarding URL event");
 
 		posix_spawn_file_actions_t actions;
 		posix_spawn_file_actions_init(&actions);
@@ -111,7 +110,7 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 		int spawnErr = posix_spawn(&pid, brouter.fileSystemRepresentation, &actions, NULL, argv, environ);
 		posix_spawn_file_actions_destroy(&actions);
 		if (spawnErr != 0) {
-			AppendLog([NSString stringWithFormat:@"error: spawn failed (%d) for %@", spawnErr, url]);
+			AppendLog([NSString stringWithFormat:@"error: spawn failed (%d)", spawnErr]);
 		}
 	}
 }
@@ -146,8 +145,13 @@ int main(int argc, const char *argv[]) {
 			return 0;
 		}
 
-		// Launched as a long-running handler: register for Apple Events and
-		// keep the run loop alive so macOS can deliver URLs while open.
+		// Launched as a long-running handler. LaunchServices delivers the
+		// GURL Apple Event only to an initialized NSApplication: a bare
+		// NSRunLoop never services the event queue, and `open -a` fails
+		// with the -1712 timeout (observed defect). NSApplication's run
+		// loop registers with the Window Server and dispatches Apple
+		// Events to the NSAppleEventManager handler.
+		NSApplication *application = [NSApplication sharedApplication];
 		EventRedirector *redirector = [[EventRedirector alloc] init];
 		[[NSAppleEventManager sharedAppleEventManager]
 			setEventHandler:redirector
@@ -156,7 +160,7 @@ int main(int argc, const char *argv[]) {
 				   andEventID:kAEGetURL];
 
 		AppendLog(@"handler started; waiting for URL events");
-		[[NSRunLoop mainRunLoop] run];
+		[application run];
 		return 0;
 	}
 }

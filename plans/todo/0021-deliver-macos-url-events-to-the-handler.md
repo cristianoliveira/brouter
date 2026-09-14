@@ -24,4 +24,3 @@ The installed macOS URL-handler process stays alive but ordinary LaunchServices 
 
 ## Notes
 Observed baseline on the real host: `/Applications/BrouterHandler.app` stays alive and strict codesign passes, but `/usr/bin/open -a` with `https://example.com/brouter-fixed-check` returned LaunchServices timeout `-1712` and added no forwarding log line. Current `main.m` registers `NSAppleEventManager` then runs `NSRunLoop` without initializing `NSApplication`. Existing logs include raw URL text and must be redacted in this focused fix.
-

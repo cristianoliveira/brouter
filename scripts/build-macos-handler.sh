@@ -28,7 +28,7 @@ echo "== building embedded brouter ($target_arch)"
 GOOS=darwin GOARCH=$target_arch go build -o "$app/Contents/MacOS/brouter" ./cmd/brouter
 
 echo "== building native event shim ($target_arch)"
-clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreServices \
+clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreServices -framework AppKit \
 	-o "$app/Contents/MacOS/BrouterHandler" \
 	native/macos/main.m
 
