@@ -134,10 +134,21 @@ func TestLinuxFlakePackageStillEvaluates(t *testing.T) {
 
 	// Regression guard for the Linux output: the dispatch must keep the
 	// x86_64-linux package evaluable with its desktop integration.
+	// This is evaluation-only: building the Linux output requires a
+	// Linux host, which this darwin machine does not have, so actual
+	// Linux build evidence is recorded there (see docs) rather than
+	// here.
 	eval := exec.Command("nix", "eval", ".#packages.x86_64-linux.brouter-handler.name", "--raw")
 	eval.Dir = ".."
 	if out, err := eval.CombinedOutput(); err != nil {
 		t.Fatalf("Linux package no longer evaluates: %v\n%s", err, out)
+	}
+
+	// x86_64-darwin must not be an advertised package: the Darwin
+	// handler is arm64-only.
+	if out, err := exec.Command("nix", "eval",
+		".#packages.x86_64-darwin.brouter-handler.name", "--raw").CombinedOutput(); err == nil {
+		t.Errorf("x86_64-darwin package is still advertised: %s", out)
 	}
 }
 

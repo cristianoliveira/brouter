@@ -66,6 +66,14 @@ if stdenv.isDarwin then
       /usr/bin/codesign --force --sign - $out/Applications/BrouterHandler.app
     '';
     installPhase = "runHook postInstall";
+
+    meta = with lib; {
+      description = "brouter CLI and macOS URL handler app";
+      # arm64 only: the shim is compiled -arch arm64 and Intel is out of
+      # scope; x86_64-darwin packages are not produced at all.
+      platforms = [ "aarch64-darwin" ];
+      mainProgram = "brouter";
+    };
   }
 else
   symlinkJoin {
