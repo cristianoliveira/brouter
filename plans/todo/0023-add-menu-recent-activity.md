@@ -1,7 +1,7 @@
 ---
 id: TASK-0023
 title: Show a small privacy-safe recent activity log in the menu
-status: todo
+status: doing
 depends_on: [TASK-0022]
 tags: [macos, diagnostics]
 ---
