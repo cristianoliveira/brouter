@@ -75,10 +75,29 @@ Apply with `darwin-rebuild switch --flake .#example`.
   environment at runtime, and your TOML never enters the Nix store —
   keep secrets and personal defaults out of any flake.
 
+## Config from a dotfiles repository (optional)
+
+To keep the config in a dotfiles repository, symlink it into place —
+do not overwrite a config that already exists:
+
+```sh
+cfg=~/.config/brouter/config.toml
+mkdir -p ~/.config/brouter
+if [ -e "$cfg" ]; then
+  echo "refusing: $cfg already exists — merge manually" >&2
+else
+  ln -s ~/dotfiles/brouter/config.toml "$cfg"
+fi
+brouter validate --config "$cfg"
+```
+
+This is plain shell plus a symlink; no Home Manager and no custom
+module is involved.
+
 ## Explicit default selection
 
 Registration and selection are manual and explicit; installing or
-rebbling never changes the default browser:
+rebuilding never changes the default browser:
 
 1. Register the linked bundle once after the first install:
 
@@ -89,6 +108,14 @@ rebbling never changes the default browser:
 
 2. Select it: System Settings → Desktop & Dock → Default web browser →
    BrouterHandler.
+
+Validate your configuration the standard way before pointing anything
+at it:
+
+```sh
+brouter validate --config ~/.config/brouter/config.toml
+# config OK: targets 1, rules 0, default "…"
+```
 3. Check eligibility at any time (read-only):
    `scripts/probes/macos-dropdown-eligibility.sh` from the repository.
 
@@ -110,8 +137,9 @@ rebbling never changes the default browser:
    removed.
 2. Restore the previous default browser in System Settings (explicitly,
    e.g. Brave or Safari).
-3. Optionally unregister the old store path
-   (`lsregister -u "/Applications/Nix Apps/BrouterHandler.app"`) and
+3. Optionally unregister the app path LaunchServices knows — that is
+   the Nix Apps link, not the store path itself:
+   `lsregister -u "/Applications/Nix Apps/BrouterHandler.app"` — and
    remove the diagnostics log
    (`~/.local/state/brouter/handler.log`).
 
