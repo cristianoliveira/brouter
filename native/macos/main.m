@@ -123,6 +123,7 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 // and no polling runs behind this slice.
 @interface PresenceController : NSObject
 - (void)install;
+- (NSMenu *)makeMenu;
 - (void)quit:(id)sender;
 @end
 
@@ -130,6 +131,29 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 	// Retained for the app lifetime: an unretained NSStatusItem is
 	// deallocated and its menu-bar icon vanishes.
 	NSStatusItem *_statusItem;
+}
+
+// Builds the presence menu. Extracted so the native self-test harness
+// can assert the Quit wiring exactly as AppKit dispatches it
+// (sendAction:to:from:) without a status bar.
+- (NSMenu *)makeMenu {
+	NSMenu *menu = [[NSMenu alloc] init];
+	NSMenuItem *running = [[NSMenuItem alloc]
+		initWithTitle:@"Brouter — running" action:nil keyEquivalent:@""];
+	running.enabled = NO;
+	[menu addItem:running];
+	[menu addItem:[NSMenuItem separatorItem]];
+	// The item targets self and quit:, which forwards to NSApplication
+	// terminate: — the action selector MUST exist on the target, or a
+	// click raises an unrecognized-selector exception. terminate: ends
+	// this handler process only. It never touches browsers, the config
+	// file, or OS defaults. Quit is not a persistent disable switch: a
+	// later OS URL delivery may relaunch the selected handler.
+	NSMenuItem *quit = [[NSMenuItem alloc]
+		initWithTitle:@"Quit Brouter" action:@selector(quit:) keyEquivalent:@"q"];
+	quit.target = self;
+	[menu addItem:quit];
+	return menu;
 }
 
 - (void)install {
@@ -147,22 +171,7 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 	}
 	_statusItem.button.accessibilityLabel = @"Brouter";
 	_statusItem.button.toolTip = @"Brouter — running";
-
-	NSMenu *menu = [[NSMenu alloc] init];
-	NSMenuItem *running = [[NSMenuItem alloc]
-		initWithTitle:@"Brouter — running" action:nil keyEquivalent:@""];
-	running.enabled = NO;
-	[menu addItem:running];
-	[menu addItem:[NSMenuItem separatorItem]];
-	// terminate: ends this handler process only. It never touches
-	// browsers, the config file, or OS defaults. Quit is not a
-	// persistent disable switch: a later OS URL delivery may relaunch
-	// the selected handler.
-	NSMenuItem *quit = [[NSMenuItem alloc]
-		initWithTitle:@"Quit Brouter" action:@selector(terminate:) keyEquivalent:@"q"];
-	quit.target = self;
-	[menu addItem:quit];
-	_statusItem.menu = menu;
+	_statusItem.menu = [self makeMenu];
 
 	AppendLog(@"menu bar presence installed");
 }
