@@ -82,9 +82,15 @@ func TestMacosHandlerForwardsURLsThroughStubBrouter(t *testing.T) {
 	argv := readArgvFile(t, waitForFile(t, filepath.Join(stubDir, "argv.log")))
 	assertForwardedArgv(t, argv, rawURL)
 
+	// Privacy contract: the shim logs the event, never the URL — query
+	// strings and fragments can carry secrets. The stub's argv log is
+	// the forwarding evidence.
 	handlerLog := readFileOrFatal(t, filepath.Join(stubDir, "handler.log"))
-	if !strings.Contains(handlerLog, rawURL) {
-		t.Errorf("handler log = %q, want the URL recorded for diagnostics", handlerLog)
+	if !strings.Contains(handlerLog, "forwarding URL event") {
+		t.Errorf("handler log = %q, want the redacted event marker", handlerLog)
+	}
+	if strings.Contains(handlerLog, rawURL) {
+		t.Errorf("handler log = %q, contains the raw URL — must stay redacted", handlerLog)
 	}
 }
 

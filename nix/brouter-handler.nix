@@ -54,7 +54,7 @@ if stdenv.hostPlatform.isDarwin then
 
       install -Dm644 Info.plist $app/Contents/Info.plist
       cc -arch arm64 -fobjc-arc \
-        -framework Foundation -framework CoreServices \
+        -framework Foundation -framework CoreServices -framework AppKit \
         -o $app/Contents/MacOS/BrouterHandler main.m
       install -m755 ${brouter}/bin/brouter $app/Contents/MacOS/brouter
       install -m755 ${brouter}/bin/brouter $out/bin/brouter

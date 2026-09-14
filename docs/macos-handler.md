@@ -133,6 +133,22 @@ If the app is missing from the Default Web Browser dropdown:
    from the html/xhtml document types at a live path. The final
    dropdown check is visual (System Settings) and user-attested.
 
+## Event loop and logging limitations (TASK-0021)
+
+- LaunchServices delivers URL Apple Events only to an initialized
+  NSApplication; the shim runs `[NSApplication sharedApplication]` and
+  its event loop. A bare run loop does not service the event queue —
+  `open -a` fails with the LaunchServices timeout `-1712` (the defect
+  this fixes).
+- While running, the app stays alive to receive further events; quit
+  it like any app (e.g. `osascript -e 'tell application id
+  "com.cristianoliveira.brouter.handler" to quit'`).
+- The shim's own log lines are URL-free (event markers and status
+  codes only); query strings and fragments are never written to the
+  log. The child brouter's stderr is appended to the same log and may
+  contain config paths, not URLs.
+- AppKit is linked; the shim remains a UIElement app (no Dock icon).
+
 ## Diagnostics
 
 All events and failures are appended to
