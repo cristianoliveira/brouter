@@ -115,6 +115,73 @@ static void ForwardURLs(NSArray<NSString *> *urls) {
 	}
 }
 
+// PresenceController owns the single menu-bar status item. It lives on
+// the same NSApplication loop that delivers URL events; it is created
+// once per app instance, so repeated OS opens never add items. The
+// menu identifies the app as running — nothing more: health, routing
+// success, and default-browser status are deliberately not claimed,
+// and no polling runs behind this slice.
+@interface PresenceController : NSObject
+- (void)install;
+- (NSMenu *)makeMenu;
+- (void)quit:(id)sender;
+@end
+
+@implementation PresenceController {
+	// Retained for the app lifetime: an unretained NSStatusItem is
+	// deallocated and its menu-bar icon vanishes.
+	NSStatusItem *_statusItem;
+}
+
+// Builds the presence menu. Extracted so the native self-test harness
+// can assert the Quit wiring exactly as AppKit dispatches it
+// (sendAction:to:from:) without a status bar.
+- (NSMenu *)makeMenu {
+	NSMenu *menu = [[NSMenu alloc] init];
+	NSMenuItem *running = [[NSMenuItem alloc]
+		initWithTitle:@"Brouter — running" action:nil keyEquivalent:@""];
+	running.enabled = NO;
+	[menu addItem:running];
+	[menu addItem:[NSMenuItem separatorItem]];
+	// The item targets self and quit:, which forwards to NSApplication
+	// terminate: — the action selector MUST exist on the target, or a
+	// click raises an unrecognized-selector exception. terminate: ends
+	// this handler process only. It never touches browsers, the config
+	// file, or OS defaults. Quit is not a persistent disable switch: a
+	// later OS URL delivery may relaunch the selected handler.
+	NSMenuItem *quit = [[NSMenuItem alloc]
+		initWithTitle:@"Quit Brouter" action:@selector(quit:) keyEquivalent:@"q"];
+	quit.target = self;
+	[menu addItem:quit];
+	return menu;
+}
+
+- (void)install {
+	_statusItem = [[NSStatusBar systemStatusBar]
+		statusItemWithLength:NSVariableStatusItemLength];
+
+	// A system symbol renders as a template image: AppKit recolors it
+	// for light and dark menu bars automatically.
+	NSImage *icon = [NSImage imageWithSystemSymbolName:@"arrow.triangle.branch"
+		accessibilityDescription:@"Brouter"];
+	if (icon == nil) {
+		AppendLog(@"error: status item symbol unavailable; menu bar presence incomplete");
+	} else {
+		_statusItem.button.image = icon;
+	}
+	_statusItem.button.accessibilityLabel = @"Brouter";
+	_statusItem.button.toolTip = @"Brouter — running";
+	_statusItem.menu = [self makeMenu];
+
+	AppendLog(@"menu bar presence installed");
+}
+
+- (void)quit:(id)sender {
+	[[NSApplication sharedApplication] terminate:self];
+}
+
+@end
+
 @interface EventRedirector : NSObject
 - (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply;
 @end
@@ -158,6 +225,11 @@ int main(int argc, const char *argv[]) {
 				andSelector:@selector(handleGetURLEvent:withReplyEvent:)
 				forEventClass:kInternetEventClass
 				   andEventID:kAEGetURL];
+
+		// Menu-bar presence rides the same run loop and application:
+		// no daemon, no tray framework, no focus change, no Dock icon.
+		PresenceController *presence = [[PresenceController alloc] init];
+		[presence install];
 
 		AppendLog(@"handler started; waiting for URL events");
 		[application run];
