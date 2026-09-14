@@ -133,6 +133,25 @@ If the app is missing from the Default Web Browser dropdown:
    from the html/xhtml document types at a live path. The final
    dropdown check is visual (System Settings) and user-attested.
 
+## Menu bar presence (TASK-0022)
+
+While running, the handler shows one menu-bar status item (a template
+icon that adapts to light and dark menu bars). Its menu lists
+"Brouter — running" and "Quit Brouter". The label claims only that the
+process is running — not health, routing success, or default-browser
+status.
+
+- Quit ends the handler process only. It never terminates browsers,
+  rewrites the config, or changes OS defaults. Quit is not a
+  persistent disable switch: a later OS URL delivery may relaunch the
+  selected handler.
+- One status item exists per app instance; repeated OS opens to the
+  running instance never add items. Launching the handler twice (for
+  example an installed copy plus a dev build) yields one item per
+  instance — quit the old instance before installing a new build.
+- CLI `open`, `validate`, and `explain` remain headless: they never
+  create a status item.
+
 ## Event loop and logging limitations (TASK-0021)
 
 - LaunchServices delivers URL Apple Events only to an initialized
