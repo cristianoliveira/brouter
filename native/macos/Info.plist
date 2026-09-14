@@ -18,6 +18,44 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<!-- Browser-dropdown eligibility: LaunchServices derives the
+	     browser-category claim (com.apple.default-app.web-browser)
+	     from html/xhtml document types combined with the http/https
+	     scheme claims — proven against Finicky, which declares
+	     exactly these two document types and appears in the
+	     dropdown. Declaring the category UTI directly in one merged
+	     dict was dropped by LaunchServices and produced no claims. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>HTML document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSTypeIsPackage</key>
+			<integer>0</integer>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.html</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>XHTML document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSTypeIsPackage</key>
+			<integer>0</integer>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.xhtml</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

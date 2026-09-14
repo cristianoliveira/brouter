@@ -128,6 +128,28 @@ func assertBundleStructure(t *testing.T, app string) {
 			t.Errorf("Info.plist does not declare the %s scheme", scheme)
 		}
 	}
+
+	// Browser-dropdown eligibility: LaunchServices populates the Default
+	// Web Browser dropdown from apps claiming html/xhtml document types
+	// alongside the http/https schemes — it derives the browser-category
+	// UTI itself (proven against Finicky on macOS 26; a scheme-only
+	// bundle was absent from the dropdown — PR18 defect, and a merged
+	// dict also declaring the category UTI directly was dropped by
+	// LaunchServices entirely, yielding no claims).
+	for _, contentType := range []string{"public.html", "public.xhtml"} {
+		if !strings.Contains(declared, "<string>"+contentType+"</string>") {
+			t.Errorf("Info.plist does not claim %s for dropdown eligibility", contentType)
+		}
+	}
+	assertDocumentTypesDeclareViewerRole(t, declared)
+}
+
+func assertDocumentTypesDeclareViewerRole(t *testing.T, declared string) {
+	t.Helper()
+	docTypes := declared[strings.Index(declared, "CFBundleDocumentTypes"):]
+	if !strings.Contains(docTypes[:strings.Index(docTypes, "</array>")], "<string>Viewer</string>") {
+		t.Errorf("Info.plist document types do not declare a Viewer role")
+	}
 }
 
 // assembleTestBundle copies the built bundle into stubDir and swaps the
