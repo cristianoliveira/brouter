@@ -24,4 +24,3 @@ The menu-bar handler needs a recognizable lowercase b monogram with a continuous
 
 ## Notes
 User approved preview comparison only. Final mark selection and app integration require a later explicit choice; preserve the current template icon until then.
-
