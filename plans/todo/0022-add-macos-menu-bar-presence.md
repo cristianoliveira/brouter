@@ -1,7 +1,7 @@
 ---
 id: TASK-0022
 title: Show the running macOS handler in the menu bar
-status: todo
+status: doing
 depends_on: [TASK-0021]
 tags: [macos, ui]
 ---
