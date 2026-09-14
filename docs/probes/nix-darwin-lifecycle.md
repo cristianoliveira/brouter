@@ -89,34 +89,37 @@ open "https://example.com/"   # warm: repeat while the browser runs
 - [ ] warm: the repeated link opens in the running session, page
       renders again
 
-Invalid config (visible failure, no silent launch):
+Invalid config and missing-browser failures — the handler surfaces
+these **in the diagnostics log only** on macOS
+(`~/Library/Logs/brouter-handler.log`; the shim has no notification
+implementation). Your real config is backed up and restored; the two
+failure configs are written only after your explicit approval:
 
 ```sh
+cp ~/.config/brouter/config.toml ~/.config/brouter/config.toml.bak   # approval: backup
+
 printf 'default = "ghost"\n\n[browsers.ghost]\nbrowser = "brave"\nprofile = "does-not-exist"\n' \
   > ~/.config/brouter/config.toml
 brouter validate --config ~/.config/brouter/config.toml   # exits nonzero
 open "https://example.com/"
-tail -3 "${XDG_STATE_HOME:-$HOME/.local/state}/brouter/handler.log"
-```
+tail -3 ~/Library/Logs/brouter-handler.log                # resolution failure recorded
 
-- [ ] `brouter validate` exits nonzero naming the problem
-- [ ] the GUI-originated link produces a notification and a handler
-      log entry; no browser launches
-
-Missing browser executable (validate passes, launch fails visibly):
-
-```sh
 printf 'default = "ghost"\n\n[browsers.ghost]\ncommand = "/nonexistent/browser %%u"\n' \
   > ~/.config/brouter/config.toml
 brouter validate --config ~/.config/brouter/config.toml   # may pass
 open "https://example.com/"
-tail -3 "${XDG_STATE_HOME:-$HOME/.local/state}/brouter/handler.log"
+tail -3 ~/Library/Logs/brouter-handler.log                # launch failure recorded
+
+mv ~/.config/brouter/config.toml.bak ~/.config/brouter/config.toml   # restore
 ```
 
-- [ ] handler log records the launch failure (status line); the
-      bounded notification appears; nothing launches silently
-
-Restore the user's real config after these two failure cases.
+- [ ] approved the backup before either failure config was written
+- [ ] `brouter validate` exits nonzero naming the profile problem
+- [ ] the handler log records the config-resolution failure (no
+      browser launches)
+- [ ] for the missing browser: validate may pass, but the log records
+      the launch failure; nothing launches silently
+- [ ] real config restored byte-identical
 
 ### Case B — update
 
@@ -132,21 +135,34 @@ readlink "/Applications/Nix Apps/BrouterHandler.app"   # new store path
       changed it)
 - [ ] `~/.config/brouter/config.toml` untouched
 
-Post-update forwarding proof:
+Post-update forwarding proof — capture `before` BEFORE the switch and
+`after` afterwards; they are separate commands with separate state:
 
 ```sh
-before=$(readlink "/Applications/Nix Apps/BrouterHandler.app")   # capture pre-update
+# BEFORE the update rebuild:
+readlink "/Applications/Nix Apps/BrouterHandler.app" | tee /tmp/brouter-before.link
+```
+
+```sh
+# AFTER the update rebuild:
 after=$(readlink "/Applications/Nix Apps/BrouterHandler.app")
+before=$(cat /tmp/brouter-before.link)
 [ "$before" != "$after" ] && echo "link moved to the new build"
 "$after/Contents/MacOS/brouter" validate --config ~/.config/brouter/config.toml
+
+# No stale registrations: every BrouterHandler registration must
+# point at an existing directory (or use the read-only probe).
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -dump | grep "path:.*BrouterHandler.app"
+  -dump | grep "^path:" | grep BrouterHandler \
+  | sed 's/^path: *//; s/ (0x[0-9a-f]*)$//' \
+  | while read -r p; do [ -d "$p" ] && echo "live: $p" || echo "STALE: $p"; done
+./scripts/probes/macos-dropdown-eligibility.sh    # read-only; flags STALE itself
 open "https://example.com/"   # forwarded by the NEW embedded binary
 ```
 
-- [ ] link target moved (`before != after`)
+- [ ] link target moved (`before != after` across the rebuild)
 - [ ] the NEW embedded CLI validates the config
-- [ ] LS registrations reference only live paths (no stale ones)
+- [ ] no `STALE:` lines; probe reports no dangling registrations
 - [ ] a clicked URL is delivered by the updated bundle (page renders)
 
 ### Case C — remove / restore
