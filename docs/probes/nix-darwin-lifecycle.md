@@ -89,61 +89,47 @@ open "https://example.com/"   # warm: repeat while the browser runs
 - [ ] warm: the repeated link opens in the running session, page
       renders again
 
-Invalid-config and missing-browser failures — the handler surfaces
-these **in the diagnostics log only** on macOS
-(`~/Library/Logs/brouter-handler.log`; the shim has no notification
-implementation). Your real config is moved aside (not copied — `mv`
-preserves a dotfiles symlink exactly) after your explicit approval,
-and restored afterwards:
+Invalid-config and missing-browser failures — verified with an
+**isolated config** passed via `--config`, so the user's real config
+is never touched. The handler surfaces failures **in the diagnostics
+log only** on macOS (`~/Library/Logs/brouter-handler.log`; the shim
+has no notification implementation).
 
 ```sh
-cfg=~/.config/brouter/config.toml
-bak="$cfg.task-0019.bak"
-# Guard against collisions, then move aside: mv never follows the
-# path, so a symlinked config is preserved as a symlink.
-[ ! -e "$bak" ] && [ ! -L "$bak" ] || { echo "refusing: $bak exists" >&2; exit 1; }
-mv "$cfg" "$bak"   # requires your approval
-```
+work=$(mktemp -d)
 
-Validation failure — malformed TOML (validate parses and
-semantic-checks; it does NOT test profile existence):
-
-```sh
-printf 'default = "x"\n[browsers\n' > "$cfg"
-brouter validate --config "$cfg"   # exits nonzero: parse error
+# Validation failure — malformed TOML (validate parses and
+# semantic-checks; it does NOT test profile existence):
+printf 'default = "x"\n[browsers\n' > "$work/broken.toml"
+brouter validate --config "$work/broken.toml"   # exits nonzero: parse error
 ```
 
 - [ ] `brouter validate` exits nonzero naming the parse/semantic
       problem
 
-Open-time failures (validate passes; the handler open records the
-failure in the log):
+Open-time failures (validate passes; the CLI open and the handler
+record the failure):
 
 ```sh
-printf 'default = "ghost"\n\n[browsers.ghost]\nbrowser = "brave"\nprofile = "does-not-exist"\n' > "$cfg"
-brouter validate --config "$cfg"   # passes: profile existence is an open-time check
-open "https://example.com/"
-tail -3 ~/Library/Logs/brouter-handler.log   # resolution failure recorded
+printf 'default = "ghost"\n\n[browsers.ghost]\nbrowser = "brave"\nprofile = "does-not-exist"\n' > "$work/profile.toml"
+brouter validate --config "$work/profile.toml"   # passes: profile existence is an open-time check
+brouter open --config "$work/profile.toml" "https://example.com/"   # fails visibly in the terminal
+tail -3 ~/Library/Logs/brouter-handler.log   # only if this URL went through the handler
 
-printf 'default = "ghost"\n\n[browsers.ghost]\ncommand = "/nonexistent/browser %%u"\n' > "$cfg"
-open "https://example.com/"
-tail -3 ~/Library/Logs/brouter-handler.log   # launch failure recorded
+printf 'default = "ghost"\n\n[browsers.ghost]\ncommand = "/nonexistent/browser %%u"\n' > "$work/ghost.toml"
+brouter open --config "$work/ghost.toml" "https://example.com/"   # launch failure, visible
 ```
 
-- [ ] handler log records the profile-resolution failure; no browser
-      launches
-- [ ] handler log records the missing-browser launch failure; nothing
-      launches silently
+- [ ] CLI open with the isolated missing-profile config fails visibly
+      (profile-resolution error)
+- [ ] CLI open with the isolated missing-browser config fails visibly
+      (launch error); nothing launches silently
 
-Restore the original config (path and type preserved):
-
-```sh
-mv "$bak" "$cfg"
-```
-
-- [ ] approved the move-aside before any failure config was written
-- [ ] original config restored at the same path, preserving a symlink
-      if it was one
+GUI-with-user-config failure (the handler resolving the user's real
+`~/.config` config through a GUI-originated event): **UNTESTED** —
+pending a safe dedicated test environment (e.g. a launchd-visible
+test-only `XDG_CONFIG_HOME`); intentionally not exercised against the
+real user config.
 
 ### Case B — update
 
