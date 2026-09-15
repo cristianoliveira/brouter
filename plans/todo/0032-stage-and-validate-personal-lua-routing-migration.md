@@ -20,4 +20,3 @@ The personal configuration is a symlink into dotfiles, so migration must prove r
 - [ ] Criterion 2
 
 ## Notes
-

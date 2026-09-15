@@ -223,4 +223,3 @@ snapshot. Include symlink replacement, atomic rename, malformed/partial
 writes, unstable-read rejection, missing files, and cross-file edit
 boundary cases. Engine-agnostic: the suite must pass regardless of the
 chosen provider.
-

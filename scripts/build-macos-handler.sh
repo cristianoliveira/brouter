@@ -6,7 +6,8 @@
 # declaring the http and https URL schemes. Signing is ad-hoc; see
 # docs/macos-handler.md for the honest signing and distribution notes.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
 	echo "refusing: the macOS handler bundle builds only on macOS" >&2
@@ -33,7 +34,7 @@ clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreService
 	native/macos/main.m
 
 	echo "== building isolated lua route helper ($target_arch)"
-bash "$(dirname "$0")/build-lua-helper.sh" "$app/Contents/MacOS/brouter-lua-helper"
+bash "$REPO_ROOT/scripts/build-lua-helper.sh" "$app/Contents/MacOS/brouter-lua-helper"
 
 echo "== assembling bundle metadata"
 mkdir -p "$app/Contents/Resources"
