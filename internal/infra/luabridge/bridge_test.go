@@ -96,6 +96,10 @@ func TestHelperSandboxCapabilityDenial(t *testing.T) {
 		`return tostring(require)`,
 		`return tostring(load)`,
 		`return tostring(debug)`,
+		`return tostring(print)`,
+		`return tostring(warn)`,
+		`return tostring(rawset)`,
+		`return tostring(setmetatable)`,
 	} {
 		res := evalWith(t, helper, routeWrapper(probe))
 		if res.Status != StatusOK || res.Target != "nil" {
@@ -160,6 +164,28 @@ func TestProviderRejectsInvalidURLBeforeHelper(t *testing.T) {
 		if _, err := p.Decide(context.Background(), bad); err == nil {
 			t.Errorf("invalid url %q must be rejected visibly", bad)
 		}
+	}
+}
+
+// ctx is read-only: writes to existing or new fields are denied, and
+// the metatable is hidden ("protected"), so the real table behind the
+// proxy is unreachable.
+func TestHelperReadOnlyCtx(t *testing.T) {
+	helper := buildHelper(t)
+	res := evalWith(t, helper, routeWrapper(
+		fmt.Sprintf(`ctx.url.host = "changed" return tostring(ctx.url.host)`)))
+	if res.Status != StatusError || res.Category != "script-error" {
+		t.Errorf("ctx.url write must be denied: %+v", res)
+	}
+	res = evalWith(t, helper, routeWrapper(
+		fmt.Sprintf(`ctx.newfield = 1 return tostring(ctx.newfield)`)))
+	if res.Status != StatusError || res.Category != "script-error" {
+		t.Errorf("ctx write must be denied: %+v", res)
+	}
+	res = evalWith(t, helper, routeWrapper(
+		fmt.Sprintf(`return tostring(getmetatable(ctx.url))`)))
+	if res.Status != StatusOK || res.Target != "protected" {
+		t.Errorf("metatable must be hidden (protected), got %+v", res)
 	}
 }
 

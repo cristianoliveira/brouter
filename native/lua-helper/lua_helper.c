@@ -234,6 +234,29 @@ static void evaluate(lua_State *L, const char *script,
 	*target = copy;
 }
 
+static int readonly_error(lua_State *L) {
+	return luaL_error(L, "ctx is read-only");
+}
+
+// Replaces the real table at the top of the stack with a read-only
+// proxy over it: reads pass through to the real table, writes are
+// denied, and the metatable is hidden so the real table cannot be
+// reached through it. rawset and setmetatable are stripped globally,
+// closing the two remaining mutation paths (a rawset on the proxy only
+// shadows script-local reads; the real table stays unreachable).
+static void make_readonly(lua_State *L) {
+	lua_newtable(L); // P: the table scripts actually hold
+	lua_createtable(L, 0, 3);
+	lua_pushvalue(L, -3);
+	lua_setfield(L, -2, "__index");
+	lua_pushcfunction(L, readonly_error);
+	lua_setfield(L, -2, "__newindex");
+	lua_pushliteral(L, "protected");
+	lua_setfield(L, -2, "__metatable");
+	lua_setmetatable(L, -2);
+	lua_replace(L, -2);
+}
+
 int main(void) {
 	Pair *pairs = NULL;
 	long n = read_request(stdin, &pairs);
@@ -270,7 +293,7 @@ int main(void) {
 		// print and warn are stripped too: the framed response is the only
 	// thing this process may write to stdout, and a script that prints
 	// would corrupt the framing. Scripts have no output channel.
-	const char *banned[] = {"os", "io", "print", "warn", "dofile", "loadfile", "require", "load", "debug", NULL};
+	const char *banned[] = {"os", "io", "print", "warn", "dofile", "loadfile", "require", "load", "debug", "rawset", "setmetatable", NULL};
 		for (int i = 0; banned[i]; i++) {
 			lua_pushnil(L);
 			lua_setglobal(L, banned[i]);
@@ -283,7 +306,8 @@ int main(void) {
 		lua_setfield(L, -2, "epoch");
 		lua_pushcclosure(L, utils_utc, 0);
 		lua_setfield(L, -2, "utc");
-		lua_setglobal(L, "utils");
+		make_readonly(L);
+	lua_setglobal(L, "utils");
 
 		// ctx = { url = {...} }: immutable contract fields only, raw
 		// bytes, no decoding, no userinfo.
@@ -297,9 +321,11 @@ int main(void) {
 			lua_pushstring(L, v ? v : "");
 			lua_setfield(L, -2, urlNames[i]);
 		}
+		make_readonly(L);
 		lua_createtable(L, 0, 1);
 		lua_insert(L, -2);
 		lua_setfield(L, -2, "url");
+		make_readonly(L);
 		lua_setglobal(L, "ctx");
 
 		evaluate(L, script, &status, &category, &target);
