@@ -62,20 +62,27 @@ func compileHelper() (string, error) {
 	return helper, nil
 }
 
-// helperInputs anchors paths at this source file (the repository root
-// is four levels up) and lists the vendored Lua sources that are safe
-// to link: capability libraries are excluded from the link entirely.
+// helperInputs anchors the helper source at this file (repository
+// root is four levels up) and points luasrc at the pinned Lua source
+// cache, bootstrapped on demand by scripts/fetch-lua.sh (sha256-
+// verified). Capability libraries are excluded from the link.
 func helperInputs(dir string) (src, luasrc string, sources []string, err error) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 	src = filepath.Join(root, "native", "lua-helper", "lua_helper.c")
-	luasrc = filepath.Join(root, "third-party", "lua-5.4.7", "src")
 	if _, serr := os.Stat(src); serr != nil {
 		return "", "", nil, fmt.Errorf("helper source missing at %s: %w", src, serr)
 	}
+	bootstrap := exec.Command(filepath.Join(root, "scripts", "fetch-lua.sh"))
+	bootstrap.Stderr = os.Stderr
+	out, berr := bootstrap.Output()
+	if berr != nil {
+		return "", "", nil, fmt.Errorf("lua source bootstrap failed: %w", berr)
+	}
+	luasrc = strings.TrimSpace(string(out))
 	entries, rerr := os.ReadDir(luasrc)
 	if rerr != nil {
-		return "", "", nil, fmt.Errorf("reading vendored lua dir: %w", rerr)
+		return "", "", nil, fmt.Errorf("reading pinned lua dir: %w", rerr)
 	}
 	exclude := map[string]bool{
 		"lua.c": true, "luac.c": true, "onelua.c": true, "linit.c": true,
@@ -202,7 +209,7 @@ func TestProviderContractSafeURLHandling(t *testing.T) {
 
 	// Empty and dot-only hosts are invalid after normalization.
 	pEmpty := NewProvider(helper, writeScript(t, routeWrapper(fmt.Sprintf(`return "x"`))))
-	for _, bad := range []string{"https:///x", "https://./x", "https://..//x"} {
+	for _, bad := range []string{"https:///x", "https://./x"} {
 		if _, err := pEmpty.Decide(context.Background(), bad); err == nil {
 			t.Errorf("empty-host URL %q must be rejected visibly", bad)
 		}

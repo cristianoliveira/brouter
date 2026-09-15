@@ -94,17 +94,40 @@ func ReadScript(path string) ([]byte, error) {
 // script, missing helper) and must stop the open. Returned Results
 // with StatusError are per-URL runtime failures: the caller falls back
 // to static rules and records the category.
+// parseContractURL applies the contract's URL acceptance rules before
+// anything else: the URL must be well-formed http(s) with a non-empty
+// normalized host — identical to the static router's rejection.
+func parseContractURL(rawURL string) (*url.URL, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return nil, fmt.Errorf("invalid url: unsupported scheme %q (only http and https are routed)", scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return nil, fmt.Errorf("invalid url: empty host")
+	}
+	return u, nil
+}
+
 func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 	// URL validation precedes everything: malformed or non-http(s)
 	// URLs never reach the script or the helper (contract-safe
 	// handling, identical to the static router's rejection).
-	u, err := url.Parse(rawURL)
+	u, err := parseContractURL(rawURL)
 	if err != nil {
-		return Result{}, fmt.Errorf("invalid url: %w", err)
+		return Result{}, err
 	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return Result{}, fmt.Errorf("invalid url: unsupported scheme %q (only http and https are routed)", scheme)
+
+	// Credentials present: the script is skipped entirely (ctx never
+	// sees them, and even ctx.url.original stays credential-free on
+	// the URLs it does see); the static rules decide instead.
+	if u.User != nil {
+		return Result{Status: StatusDefer, Category: "userinfo-present"}, nil
 	}
 
 	script, err := ReadScript(p.ScriptPath)
@@ -114,20 +137,10 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 
 	// Contract normalization, identical to the static router's host
 	// matching: scheme lowercased, host lowercased with one trailing
-	// dot stripped, no IDN conversion. An empty host after
-	// normalization is invalid, exactly like the static router.
+	// dot stripped, no IDN conversion.
+	scheme := strings.ToLower(u.Scheme)
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimSuffix(host, ".")
-	if host == "" {
-		return Result{}, fmt.Errorf("invalid url: empty host")
-	}
-
-	// Credentials present: the script is skipped entirely (ctx never
-	// sees them, and even ctx.url.original stays credential-free on
-	// the URLs it does see); the static rules decide instead.
-	if u.User != nil {
-		return Result{Status: StatusDefer, Category: "userinfo-present"}, nil
-	}
 	port := u.Port()
 
 	epoch := p.Clock().Unix()
@@ -140,7 +153,7 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 		{"url.port", port},
 		{"url.path", u.EscapedPath()},
 		{"url.query", u.RawQuery},
-		{"url.fragment", u.RawFragment},
+		{"url.fragment", u.EscapedFragment()},
 	}
 
 	budget := p.Budget

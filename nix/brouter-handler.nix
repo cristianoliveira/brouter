@@ -17,6 +17,7 @@
   go_1_27,
   coreutils,
   dbus,
+  pkgs,
   src,
 }:
 let
@@ -45,7 +46,13 @@ let
     "lua.c" "luac.c" "onelua.c" "linit.c" "loadlib.c" "liolib.c"
     "loslib.c" "ldblib.c" "lmathlib.c" "lutf8lib.c"
   ];
-  luaSrcDir = ../third-party/lua-5.4.7/src;
+  # Pinned, hash-verified Lua 5.4.7 source (same pin as
+  # scripts/fetch-lua.sh). The helper links only the safe subset.
+  luaSrc = pkgs.fetchzip {
+    url = "https://www.lua.org/ftp/lua-5.4.7.tar.gz";
+    sha256 = "sha256-o1jnQCcnlk2OXU4Cc8X7bJiOU2QN92vd91TtBhNM/hU=";
+  };
+  luaSrcDir = "${luaSrc}/src";
   luaSources = map (name: luaSrcDir + ("/" + name)) (
     builtins.filter (
       name: lib.hasSuffix ".c" name && !(builtins.elem name luaExclude)
@@ -57,7 +64,7 @@ let
     src = ../native/lua-helper;
     dontConfigure = true;
     buildPhase = ''
-      cc -O2 -I ${../third-party/lua-5.4.7/src} lua_helper.c ${
+      cc -O2 -I ${luaSrcDir} lua_helper.c ${
         lib.concatStringsSep " " luaSources
       } -lm -o brouter-lua-helper
     '';
