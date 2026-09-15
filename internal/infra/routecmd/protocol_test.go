@@ -24,10 +24,7 @@ func writeCommand(t *testing.T, body string) []string {
 
 func newCommander(t *testing.T, argv []string) *Commander {
 	t.Helper()
-	return &Commander{
-		Command: argv,
-		Clock:   func() time.Time { return time.Unix(1700000000, 0).UTC() },
-	}
+	return &Commander{Command: argv}
 }
 
 func mustScript(t *testing.T) string {
@@ -38,14 +35,10 @@ func mustScript(t *testing.T) string {
 	return ""
 }
 
-// Happy path: the command returns an exact target ID.
+// Happy path: the command answers with an exact target ID.
 func TestCommanderHappyPath(t *testing.T) {
 	mustScript(t)
-	c := newCommander(t, writeCommand(t,
-		`read -r line
-case "$line" in
-  *'"host":"example.com"'*) printf '{"version":1,"route":"work-browser"}';;
-esac`))
+	c := newCommander(t, writeCommand(t, `printf 'work-browser'`))
 	res, err := c.Decide(context.Background(), "https://example.com/x?a=1#f")
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
@@ -55,11 +48,34 @@ esac`))
 	}
 }
 
-// Explicit null defers to static rules.
-func TestCommanderExplicitNullDefers(t *testing.T) {
+// Terminal LF and CRLF are both accepted.
+func TestCommanderTerminalLineEndings(t *testing.T) {
 	mustScript(t)
-	c := newCommander(t, writeCommand(t,
-		`read -r line; printf '{"version":1,"route":null}'`))
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"no newline", `printf 'work-browser'`},
+		{"terminal lf", `printf 'work-browser\n'`},
+		{"terminal crlf", `printf 'work-browser\r\n'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCommander(t, writeCommand(t, tc.out))
+			res, err := c.Decide(context.Background(), "https://example.com/x")
+			if err != nil {
+				t.Fatalf("Decide: %v", err)
+			}
+			if res.Defer || res.Route != "work-browser" {
+				t.Fatalf("result = %+v", res)
+			}
+		})
+	}
+}
+
+// The exact @default literal is the only defer.
+func TestCommanderDefaultTokenDefers(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t, `printf '@default\n'`))
 	res, err := c.Decide(context.Background(), "https://example.com/x")
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
@@ -69,40 +85,18 @@ func TestCommanderExplicitNullDefers(t *testing.T) {
 	}
 }
 
-// The request the command sees carries the full versioned contract.
-func TestCommanderSeesVersionedRequest(t *testing.T) {
+// The command reads the original URL bytes plus exactly one LF.
+func TestCommanderSeesOriginalURLBytesAndLF(t *testing.T) {
 	mustScript(t)
 	c := newCommander(t, writeCommand(t,
 		`read -r line
-case "$line" in
-  '{"version":1,"url":{"original":"https://example.com/x?a=1#f","scheme":"https","host":"example.com","port":"","path":"/x","query":"a=1","fragment":"f"},"utils":{"epoch":1700000000,"utc":{"year":2023,"month":11,"day":14,"hour":22,"min":13,"sec":20}}}'*)
-    printf '{"version":1,"route":"ok"}';;
-  *) printf '{"version":1,"route":"mismatch"}';;
-esac`))
-	res, err := c.Decide(context.Background(), "https://example.com/x?a=1#f")
-	if err != nil {
-		t.Fatalf("Decide: %v", err)
-	}
-	if res.Route != "ok" {
-		t.Fatalf("request did not match the contract exactly: %+v", res)
-	}
-}
-
-// Percent escapes survive as written (no decoding).
-func TestCommanderSeesEscapedFields(t *testing.T) {
-	mustScript(t)
-	c := newCommander(t, writeCommand(t,
-		`read -r line
-case "$line" in
-  *'"path":"/a%2Fb"'*'"fragment":"e%2Ff"'*) printf '{"version":1,"route":"escaped-ok"}';;
-  *) printf '{"version":1,"route":"decoded"}';;
-esac`))
+[ "$line" = "https://example.com/a%2Fb?c=%23d#e%2Ff" ] && printf 'wire-ok' || printf 'wire-bad'`))
 	res, err := c.Decide(context.Background(), "https://example.com/a%2Fb?c=%23d#e%2Ff")
 	if err != nil {
 		t.Fatalf("Decide: %v", err)
 	}
-	if res.Route != "escaped-ok" {
-		t.Fatalf("fields decoded or missing: %+v", res)
+	if res.Route != "wire-ok" {
+		t.Fatalf("wire bytes wrong (decoded or mangled): %+v", res)
 	}
 }
 
@@ -115,16 +109,24 @@ func TestCommanderFailureCategories(t *testing.T) {
 		wantErr error
 	}{
 		{"nonzero exit", `exit 3`, ErrCommandError},
-		{"malformed output", `printf 'not json'`, ErrInvalidResponse},
-		{"wrong version", `printf '{"version":2,"route":"x"}'`, ErrInvalidResponse},
-		{"extra keys", `printf '{"version":1,"route":"x","extra":1}'`, ErrInvalidResponse},
-		{"trailing data", `printf '{"version":1,"route":"x"}{}'`, ErrInvalidResponse},
-		{"output cap", `printf '{"version":1,"route":"%s"}' "$(printf 'a%.0s' $(seq 1 9000))"`, ErrCommandOutputCap},
+		{"unavailable command", "", ErrCommandUnavailable},
+		{"empty output", `true`, ErrInvalidResponse},
+		{"extra lines", `printf 'a\nb\n'`, ErrInvalidResponse},
+		{"embedded newline", `printf 'a\nb'`, ErrInvalidResponse},
+		{"embedded carriage return", `printf 'a\rb'`, ErrInvalidResponse},
+		{"non-utf8 output", `printf '\xff\xfe'`, ErrInvalidResponse},
+		{"output cap", `printf 'a%.0s' $(seq 1 9000)`, ErrCommandOutputCap},
 		{"timeout", `sleep 5`, ErrCommandTimeout},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := newCommander(t, writeCommand(t, tc.body))
+			var argv []string
+			if tc.body == "" {
+				argv = []string{filepath.Join(t.TempDir(), "does-not-exist")}
+			} else {
+				argv = writeCommand(t, tc.body)
+			}
+			c := newCommander(t, argv)
 			res, err := c.Decide(context.Background(), "https://example.com/x")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tc.wantErr)
@@ -136,8 +138,8 @@ func TestCommanderFailureCategories(t *testing.T) {
 	}
 }
 
-// URL acceptance precedes the spawn: the command never runs for
-// invalid URLs, and credentials never reach it.
+// URL acceptance precedes the spawn: control bytes, invalid URLs, and
+// credentials never reach the command.
 func TestCommanderURLPrevalidation(t *testing.T) {
 	mustScript(t)
 	c := newCommander(t, []string{filepath.Join(t.TempDir(), "never-spawned")})
@@ -147,6 +149,8 @@ func TestCommanderURLPrevalidation(t *testing.T) {
 		"javascript:alert(1)",
 		"https:///x",
 		"https://./x",
+		"https://example.com/x\nGET /admin HTTP/1.1\r\n", // control bytes
+		"https://example.com/x\ty",                       // tab is a control byte
 	} {
 		if _, err := c.Decide(context.Background(), bad); err == nil {
 			t.Errorf("invalid url %q must be rejected visibly", bad)
@@ -157,52 +161,8 @@ func TestCommanderURLPrevalidation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "userinfo credentials are not supported") {
 		t.Fatalf("userinfo URL must be rejected with the fixed message, got %v", err)
 	}
-	if errors.Is(err, ErrCommandError) {
-		t.Fatalf("userinfo rejection must not surface as a command failure")
-	}
 	if res != (Result{}) {
 		t.Fatalf("no partial result: %+v", res)
-	}
-}
-
-// Host normalization: lowercase, one trailing dot stripped.
-func TestCommanderSeesNormalizedHost(t *testing.T) {
-	mustScript(t)
-	c := newCommander(t, writeCommand(t,
-		`read -r line
-case "$line" in
-  *'"scheme":"https","host":"example.com"'*) printf '{"version":1,"route":"norm-ok"}';;
-  *) printf '{"version":1,"route":"raw"}';;
-esac`))
-	res, err := c.Decide(context.Background(), "HTTPS://EXAMPLE.COM./x")
-	if err != nil {
-		t.Fatalf("Decide: %v", err)
-	}
-	if res.Route != "norm-ok" {
-		t.Fatalf("host not normalized: %+v", res)
-	}
-}
-
-// Missing route key is NOT a defer: v1 requires an explicit target or
-// explicit null.
-func TestCommanderMissingRouteKeyRejected(t *testing.T) {
-	mustScript(t)
-	c := newCommander(t, writeCommand(t, `printf '{"version":1}'`))
-	res, err := c.Decide(context.Background(), "https://example.com/x")
-	if !errors.Is(err, ErrInvalidResponse) {
-		t.Fatalf("missing route must be invalid response, got %v", err)
-	}
-	if res != (Result{}) {
-		t.Fatalf("no partial result: %+v", res)
-	}
-}
-
-// Non-string route values are invalid, not defers.
-func TestCommanderNonStringRouteRejected(t *testing.T) {
-	mustScript(t)
-	c := newCommander(t, writeCommand(t, `printf '{"version":1,"route":42}'`))
-	if _, err := c.Decide(context.Background(), "https://example.com/x"); !errors.Is(err, ErrInvalidResponse) {
-		t.Fatalf("non-string route must be invalid response, got %v", err)
 	}
 }
 
@@ -217,11 +177,32 @@ func TestCommanderURLLengthBound(t *testing.T) {
 	}
 }
 
+// Host normalization: lowercase, one trailing dot stripped.
+func TestCommanderSeesNormalizedHost(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t,
+		`read -r line
+case "$line" in
+  "HTTPS://EXAMPLE.COM./x") printf 'raw';;
+  *) printf 'norm-ok';;
+esac`))
+	// The wire carries the ORIGINAL bytes; normalization stays in Go.
+	// This probe proves the command sees original bytes and that the
+	// URL was accepted despite its unusual casing.
+	res, err := c.Decide(context.Background(), "HTTPS://EXAMPLE.COM./x")
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if res.Route != "raw" {
+		t.Fatalf("expected original bytes on the wire: %+v", res)
+	}
+}
+
 // A command that leaves a descendant holding the pipes still times out
 // instead of hanging: the whole process group is killed.
 func TestCommanderDescendantCannotHangTheTimeout(t *testing.T) {
 	mustScript(t)
-	c := newCommander(t, writeCommand(t, `sleep 1 & printf '{"version":1,"route":"slow"}'; sleep 30 &`))
+	c := newCommander(t, writeCommand(t, `sleep 1 & printf 'slow'; sleep 30 &`))
 	done := make(chan struct{})
 	var res Result
 	var err error

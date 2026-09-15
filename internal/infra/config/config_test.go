@@ -477,3 +477,29 @@ func TestValidateRouteCommandStructureOnly(t *testing.T) {
 		})
 	}
 }
+
+// The reserved @default line means explicit defer; while route_command
+// is active it cannot also be a configured browser ID.
+func TestValidateRouteCommandDefaultCollision(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `default = "app"
+
+[browsers.app]
+browser = "safari"
+
+[browsers.@default]
+browser = "chromium"
+
+[route_command]
+command = ["/bin/sh", "/p/r.sh"]
+`
+	// A raw "@default" table key needs quoting in TOML.
+	content = strings.Replace(content, "[browsers.@default]", "[browsers.\"@default\"]", 1)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "reserved for explicit defer") {
+		t.Fatalf("err = %v, want the @default collision error", err)
+	}
+}

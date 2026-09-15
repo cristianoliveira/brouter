@@ -3,12 +3,9 @@ package routecmd
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -19,14 +16,33 @@ import (
 // enters responses.
 type execRunner struct{}
 
+// cappedWriter is a size-bounded io.Writer: once the limit is crossed
+// it flags overflow and fails, which stops exec's internal copying.
+type cappedWriter struct {
+	limit int
+	buf   bytes.Buffer
+	over  bool
+}
+
+func newCappedWriter(limit int) *cappedWriter {
+	return &cappedWriter{limit: limit}
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	if w.buf.Len()+len(p) > w.limit {
+		w.over = true
+		return 0, errOutputCap
+	}
+	w.buf.Write(p)
+	return len(p), nil
+}
+
 // Run implements Runner.
 //
 // Kill discipline: the child runs in its own process group and the
 // whole group is killed at the deadline, so descendants that inherited
-// the pipes cannot outlive the decision. Wait runs concurrently with
-// the output copies — waiting on the copies first could hang forever
-// on a descendant-held pipe, because Go closes those pipes only inside
-// Wait.
+// stdout/stderr cannot outlive the decision or keep exec's internal
+// copy goroutines alive past it.
 func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout []byte, err error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
@@ -35,60 +51,28 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	cmd.SysProcAttr = groupAttr()
 	cmd.Stdin = bytes.NewReader(stdin)
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCommandError, err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCommandError, err)
-	}
+	out := newCappedWriter(OutputCap)
+	errOut := newCappedWriter(OutputCap)
+	cmd.Stdout = out
+	cmd.Stderr = errOut
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCommandError, err)
+		return nil, ErrCommandUnavailable
 	}
 
-	// Deadline kill: fires even while we are blocked on Wait/copies.
+	// Deadline kill: fires even while Wait is blocked on descendants.
 	killer := time.AfterFunc(Timeout, func() { killGroup(cmd.Process) })
 	defer killer.Stop()
 
-	out := newCappedBuffer(OutputCap)
-	errOut := newCappedBuffer(OutputCap)
-	var wg sync.WaitGroup
-	copyErrs := make(chan error, 2)
-	wg.Add(2)
-	go func() { defer wg.Done(); copyErrs <- copyCapped(out, stdoutPipe) }()
-	go func() { defer wg.Done(); copyErrs <- copyCapped(errOut, stderrPipe) }()
-
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- cmd.Wait() }()
-
-	// Wait for process exit; Wait closes the pipes, which unblocks the
-	// copies (post-kill read errors are expected noise).
-	waitErr := <-waitCh
-	wg.Wait()
-	close(copyErrs)
-	timedOut := ctx.Err() == context.DeadlineExceeded
-
-	var copyErr error
-	for e := range copyErrs {
-		if e != nil && copyErr == nil {
-			copyErr = e
-		}
-	}
+	waitErr := cmd.Wait()
 
 	switch {
-	case timedOut:
+	case ctx.Err() == context.DeadlineExceeded:
 		return nil, ErrCommandTimeout
-	case errors.Is(copyErr, ErrCommandOutputCap):
+	case out.over || errOut.over:
 		return nil, ErrCommandOutputCap
-	case copyErr != nil:
-		// A genuine read failure with no timeout — surfaced, not hidden.
-		return nil, fmt.Errorf("%w: reading command output failed", ErrCommandError)
 	case waitErr != nil:
 		return nil, ErrCommandError
-	case out.over:
-		return nil, ErrCommandOutputCap
 	}
 	return out.buf.Bytes(), nil
 }

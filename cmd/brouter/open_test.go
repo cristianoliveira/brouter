@@ -227,7 +227,7 @@ func TestOpenRouteCommandAnswersTarget(t *testing.T) {
 	dir := t.TempDir()
 	browser, log := writeFakeBrowser(t, dir, 0)
 	routerCmd := filepath.Join(dir, "router.sh")
-	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":\"fake\"}'\n"), 0o755); err != nil {
+	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf 'fake'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
@@ -249,14 +249,14 @@ command = [%q]
 	}
 }
 
-// An explicit route:null defers to the ordered static rules.
+// An exact @default line defers to the ordered static rules.
 func TestOpenRouteCommandNullDefersToStaticRules(t *testing.T) {
 	// Given a command that defers, when open runs a URL matched by a
 	// static rule, the static rule's target is launched.
 	dir := t.TempDir()
 	browser, log := writeFakeBrowser(t, dir, 0)
 	routerCmd := filepath.Join(dir, "router.sh")
-	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":null}'\n"), 0o755); err != nil {
+	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf '@default'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
@@ -290,7 +290,7 @@ func TestOpenRouteCommandFailuresAreVisible(t *testing.T) {
 	dir := t.TempDir()
 	browser, _ := writeFakeBrowser(t, dir, 0)
 	unknownCmd := filepath.Join(dir, "unknown.sh")
-	if err := os.WriteFile(unknownCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":\"not-a-target\"}'\n"), 0o755); err != nil {
+	if err := os.WriteFile(unknownCmd, []byte("#!/bin/sh\nprintf 'not-a-target'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	failCmd := filepath.Join(dir, "fail.sh")

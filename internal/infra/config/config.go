@@ -146,8 +146,11 @@ func Load(path string) (*Config, error) {
 
 // validateRouteCommand checks the route_command section's structure
 // only: the command is never resolved or executed (validate stays
-// side-effect free); resolvability is checked at first use.
-func validateRouteCommand(path string, spec *routeCommandSpec) []error {
+// side-effect free); resolvability is checked at first use. The
+// reserved @default target ID cannot be configured while a route
+// command is active: the line response would collide with an explicit
+// defer.
+func validateRouteCommand(path string, spec *routeCommandSpec, browsers map[string]browserSpec) []error {
 	if spec == nil {
 		return nil
 	}
@@ -159,6 +162,9 @@ func validateRouteCommand(path string, spec *routeCommandSpec) []error {
 		if a == "" {
 			errs = append(errs, fmt.Errorf("%s: route_command: command argv[%d] is empty", path, i))
 		}
+	}
+	if _, collision := browsers["@default"]; collision {
+		errs = append(errs, fmt.Errorf("%s: route_command: \"@default\" is reserved for explicit defer and cannot be a browser ID while route_command is configured", path))
 	}
 	return errs
 }
@@ -174,7 +180,7 @@ func validate(path string, file fileFormat) (*Config, error) {
 		errs = append(errs, fail("default", "default target is required"))
 	}
 
-	errs = append(errs, validateRouteCommand(path, file.RouteCommand)...)
+	errs = append(errs, validateRouteCommand(path, file.RouteCommand, file.Browsers)...)
 
 	cfg := &Config{
 		Default: domain.Target(file.Default),

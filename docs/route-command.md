@@ -17,40 +17,38 @@ this section behave exactly as before.
 
 ## Protocol (v1)
 
-brouter spawns the command once per URL and writes one bounded JSON
-object to its stdin, then closes it:
+brouter spawns the command once per URL and writes the URL's original
+bytes followed by exactly one LF to stdin, then closes stdin. The
+bytes are never JSON-encoded, decoded, normalized, or shell-escaped;
+control bytes, userinfo credentials, over-long URLs, and malformed
+URLs are rejected before the command is spawned.
 
-```json
-{"version":1,"url":{"original":"https://example.com/x?a=1#f","scheme":"https","host":"example.com","port":"","path":"/x","query":"a=1","fragment":"f"},"utils":{"epoch":1700000000,"utc":{"year":2023,"month":11,"day":14,"hour":22,"min":13,"sec":20}}}
+The command answers on stdout with exactly one line:
+
+```
+work-browser
 ```
 
-- `url.original` is the URL byte-for-byte as typed; `scheme`/`host` are
-  normalized like the static router (lowercase, one trailing host dot
-  stripped); `path`/`query`/`fragment` keep their percent-escapes as
-  written; userinfo credentials never appear anywhere.
-- `utils` is one clock sample frozen by brouter for this decision.
-
-The command answers with exactly one JSON object on stdout:
-
-```json
-{"version":1,"route":"work-browser"}
-```
-
-- `"route"` must be an exact configured target ID, or explicit `null`
-  to defer to the ordered static rules. Nothing else defers.
-- Strict decoding: unknown keys, wrong versions, trailing bytes, or
-  non-JSON output are failures. Keep stdout clean — print diagnostics
-  to stderr (captured, bounded, never forwarded into responses).
+- The line is one configured target ID with no newline, one terminal
+  LF, or one terminal CRLF.
+- The reserved literal `@default` means explicit defer to the ordered
+  static TOML rules. It cannot be configured as a browser ID while
+  `route_command` is active.
+- Anything else — empty output, extra lines, embedded CR/LF,
+  non-UTF-8 bytes, wrong target — is a visible failure. No `jq` or
+  other helper is required: `read line` in shell, `sys.stdin.read()`
+  in Python, `io.read()` in Lua all work.
 
 ## Bounds and failures
 
 - Hard 2s wall-clock timeout: the command is killed.
 - 4 KiB stdout/stderr capture cap: exceeding it is a failure.
 - Fixed redacted categories: `route_command: command failed (exit
-  nonzero)`, `route_command: command timed out`, `route_command:
-  command output exceeded the size limit`, `route_command: invalid
-  response`, and `route_command: unknown target`. URLs and command
-  output never appear in errors.
+  nonzero)`, `route_command: command unavailable`, `route_command:
+  command timed out`, `route_command: command output exceeded the
+  size limit`, `route_command: invalid response`, and
+  `route_command: unknown target`. URLs and command output never
+  appear in errors.
 - Every failure is visible and stops the open. Only `route:null`
   falls back to static rules; failures never silently do so.
 
