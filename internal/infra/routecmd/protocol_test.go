@@ -289,3 +289,42 @@ func TestCommanderDoubleTerminalEndingsRejected(t *testing.T) {
 		})
 	}
 }
+
+// Control bytes other than CR/LF (NUL, tab, escapes) are malformed
+// output too: target IDs are plain TOML strings.
+func TestCommanderControlBytesInOutputRejected(t *testing.T) {
+	mustScript(t)
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"nul byte", `printf 'tar\000get'`},
+		{"tab byte", `printf 'tar\tget'`},
+		{"escape byte", `printf 'tar\033get'`},
+		{"delete byte", `printf 'tar\177get'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCommander(t, writeCommand(t, tc.out))
+			res, err := c.Decide(context.Background(), "https://example.com/x")
+			if !errors.Is(err, ErrInvalidResponse) {
+				t.Fatalf("err = %v, want invalid response", err)
+			}
+			if res != (Result{}) {
+				t.Fatalf("no partial result: %+v", res)
+			}
+		})
+	}
+}
+
+// A pre-canceled context classifies as canceled, not as an
+// unavailable command.
+func TestCommanderPreCanceledContextClassification(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t, `printf 'x'`))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Decide(ctx, "https://example.com/x")
+	if !errors.Is(err, ErrCommandCanceled) {
+		t.Fatalf("err = %v, want command-canceled", err)
+	}
+}

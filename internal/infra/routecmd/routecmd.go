@@ -169,6 +169,14 @@ func decodeDecision(stdout []byte) (Result, error) {
 	if bytes.ContainsAny(line, "\r\n") {
 		return Result{}, fmt.Errorf("%w: extra lines", ErrInvalidResponse)
 	}
+	// Malformed/control output must fail: target IDs are plain TOML
+	// strings, so any control byte (NUL, tab, escape sequences, ...)
+	// is invalid, not just CR/LF.
+	for _, b := range line {
+		if b < 0x20 || b == 0x7f {
+			return Result{}, fmt.Errorf("%w: control byte in output", ErrInvalidResponse)
+		}
+	}
 	if !utf8.Valid(line) {
 		return Result{}, fmt.Errorf("%w: output is not valid UTF-8", ErrInvalidResponse)
 	}

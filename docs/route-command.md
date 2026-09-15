@@ -46,9 +46,11 @@ work-browser
 - Fixed redacted categories: `route_command: command failed (exit
   nonzero)`, `route_command: command unavailable`, `route_command:
   command timed out`, `route_command: command output exceeded the
-  size limit`, `route_command: invalid response`, and
+  size limit`, `route_command: invalid response`,
+  `route_command: canceled` (caller-initiated cancellation), and
   `route_command: unknown target`. URLs and command output never
-  appear in errors.
+  appear in errors. Target IDs must be plain printable strings —
+  control bytes are rejected.
 - Every failure is visible and stops the open. Only the exact
   `@default` line defers to the ordered static rules; failures never
   silently do so.

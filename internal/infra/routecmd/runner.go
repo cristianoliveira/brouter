@@ -74,7 +74,10 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	cmd.Stderr = errOut
 
 	if err := cmd.Start(); err != nil {
-		return nil, ErrCommandUnavailable
+		// A pre-canceled or expired context fails in Start; classify
+		// that as the caller's cancellation, not an unavailable
+		// command. Everything else is genuinely unspawnable.
+		return nil, startFailure(err)
 	}
 	proc.Store(cmd.Process)
 
@@ -109,6 +112,19 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 		return nil, ErrCommandError
 	}
 	return out.buf.Bytes(), nil
+}
+
+// startFailure classifies a failed spawn: a pre-canceled or expired
+// context is the caller's cancellation, not an unavailable command.
+func startFailure(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return ErrCommandCanceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return ErrCommandTimeout
+	default:
+		return ErrCommandUnavailable
+	}
 }
 
 // groupAttr puts the child in its own process group so a timeout can
