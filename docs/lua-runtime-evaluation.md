@@ -130,6 +130,29 @@ not available and is recorded as **unknown**, not as support.
 | Offline reproducibility | module pin ✓ | tarball pin ✓ | module pin ✓ | **blob provenance unresolved** | nix-pinned runner ✓ |
 | Integration cost | low (if timeout solved) | high (cgo: CGO_ENABLED=0 conflicts, cross-builds, seal) | low | medium-high (glue + pin) | medium (second binary + JSON) |
 
+## Live-edit requirement (added after PO confirmation)
+
+Confirmed requirement: TOML edits — and any future Lua script edits —
+must apply **without router restart**. The current pipeline already
+behaves this way for TOML: `runOpen`/`runExplain`/`runValidate` call
+`config.Load` per invocation (cmd/brouter/open.go:29, explain.go:28,
+validate.go:20), and the macOS shim spawns a fresh `brouter open` per
+URL, so every event resolves a fresh, immutable config snapshot; there
+is no watcher and no cache. Verified live: editing the fixture config
+between two `explain` calls changes the resolved target (alpha →
+beta) with no restart, and a missing config after an edit fails
+visibly (exit 1) with **no** last-known-good or wrong-target fallback.
+
+Consequence for every candidate above: any runtime adoption must
+preserve per-URL fresh immutable snapshots — the script (like the
+config) is re-read per event or held to an equivalent coherence
+guarantee; a long-lived engine that caches a parsed script across
+events must invalidate it on every edit and treat mid-event changes as
+out of scope. Edited-but-broken scripts/configs must fail visibly per
+the contract's error categories — no stale-cache serving and no
+last-known-good fallback unless a future policy explicitly adds one
+(covered by TASK-0029/30/31 snapshot/coherence plans).
+
 ## Hard safety requirements identified
 
 1. **A hard per-invocation timeout is non-negotiable** (contract:
