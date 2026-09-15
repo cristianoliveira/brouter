@@ -117,6 +117,52 @@ func TestHelperContractFieldsAndDeterministicClock(t *testing.T) {
 	}
 }
 
+// Contract normalization: scheme/host lowercased, one trailing dot
+// stripped — identical to the static router's host matching.
+func TestHelperSeesNormalizedSchemeAndHost(t *testing.T) {
+	helper := buildHelper(t)
+	p := NewProvider(helper, writeScript(t, routeWrapper(
+		fmt.Sprintf(`return ctx.url.scheme .. "|" .. ctx.url.host`))))
+	res, err := p.Decide(context.Background(), "HTTPS://EXAMPLE.COM./x?a=1")
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if res.Status != StatusOK || res.Target != "https|example.com" {
+		t.Errorf("normalized fields = %+v (target %q), want https|example.com", res, res.Target)
+	}
+}
+
+// A script that prints must not corrupt the framed response: print is
+// stripped, so such scripts fail with script-error and the response
+// frame still parses exactly.
+func TestHelperPrintCannotCorruptFramedResponse(t *testing.T) {
+	helper := buildHelper(t)
+	res := evalWith(t, helper, routeWrapper(
+		fmt.Sprintf(`print("CORRUPT-FRAME-OUTPUT") return "ok-target"`)))
+	if res.Status != StatusError || res.Category != "script-error" {
+		t.Fatalf("print-using script = %+v, want script-error (print is stripped)", res)
+	}
+	if strings.Contains(res.Category+res.Target, "CORRUPT") {
+		t.Errorf("script output leaked into the response: %+v", res)
+	}
+}
+
+// URL validation precedes the script and the helper: malformed and
+// non-http(s) URLs are visible errors and the helper is never spawned.
+func TestProviderRejectsInvalidURLBeforeHelper(t *testing.T) {
+	p := NewProvider(filepath.Join(t.TempDir(), "helper-should-not-exist"),
+		writeScript(t, routeWrapper(fmt.Sprintf(`return "x"`))))
+	for _, bad := range []string{
+		"ht tp://broken.test", // url.Parse error
+		"ftp://broken.test/x", // parsed, unsupported scheme
+		"javascript:alert(1)", // parsed, unsupported scheme
+	} {
+		if _, err := p.Decide(context.Background(), bad); err == nil {
+			t.Errorf("invalid url %q must be rejected visibly", bad)
+		}
+	}
+}
+
 func TestHelperFailureCategories(t *testing.T) {
 	helper := buildHelper(t)
 	cases := []struct {
@@ -198,27 +244,50 @@ func TestProviderScriptSnapshotReload(t *testing.T) {
 	}
 	write(`return "target-one"`)
 
+	// One provider instance across URLs: per-URL reload is the
+	// provider's own responsibility (script re-read per Decide).
 	p := NewProvider(helper, script)
 	p.Clock = func() time.Time { return time.Unix(1700000000, 0) }
 
-	res := evalWith(t, helper, routeWrapper(fmt.Sprintf(`return "target-one"`))) // warm-up sanity
-	if res.Status != StatusOK || res.Target != "target-one" {
-		t.Fatalf("first decision = %+v", res)
+	res, err := p.Decide(context.Background(), "https://example.com/one")
+	if err != nil || res.Status != StatusOK || res.Target != "target-one" {
+		t.Fatalf("first decision = %+v err=%v", res, err)
 	}
 
 	// Edit: the very next URL must see the new script.
 	write(`return "target-two"`)
-	res = evalWith(t, helper, routeWrapper(fmt.Sprintf(`return "target-two"`)))
-	if res.Status != StatusOK || res.Target != "target-two" {
-		t.Fatalf("reload after edit = %+v", res)
+	res, err = p.Decide(context.Background(), "https://example.com/two")
+	if err != nil || res.Status != StatusOK || res.Target != "target-two" {
+		t.Fatalf("reload after edit = %+v err=%v", res, err)
 	}
 
 	// Broken edit: visible failure, no stale last-known-good target.
 	write(`function route( end`)
-	p2 := NewProvider(helper, script)
-	p2.Clock = p.Clock
-	if _, err := p2.Decide(context.Background(), "https://example.com/broken"); err == nil {
+	if _, err := p.Decide(context.Background(), "https://example.com/broken"); err == nil {
 		t.Fatal("broken script must fail visibly, not serve a stale result")
+	}
+}
+
+// Unstable mid-read edits are rejected visibly: when the two snapshot
+// reads disagree, ReadScript fails instead of serving a torn script.
+func TestReadScriptRejectsUnstableRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "route.lua")
+	if err := os.WriteFile(path, []byte("stable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original := readFile
+	calls := 0
+	readFile = func(string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte("torn-partial"), nil
+		}
+		return []byte("fully-rewritten-by-editor"), nil
+	}
+	defer func() { readFile = original }()
+
+	if _, err := ReadScript(path); err == nil || !strings.Contains(err.Error(), "changed while reading") {
+		t.Fatalf("unstable read must be rejected visibly, got err=%v", err)
 	}
 }
 
@@ -229,27 +298,29 @@ func TestLoaderFollowsSymlinkReplacement(t *testing.T) {
 	link := filepath.Join(dir, "link.lua")
 
 	atomicWrite(t, filepath.Join(dir, "real.lua"), "first")
-	symlink(t, filepath.Join(dir, "real.lua"), link)
+	if err := os.Symlink(filepath.Join(dir, "real.lua"), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
 	assertContent(t, link, "first")
 
 	// Atomic-rename replacement of the target file.
 	atomicWrite(t, filepath.Join(dir, "real.next"), "second")
-	symlink(t, filepath.Join(dir, "real.next"), filepath.Join(dir, "real.lua"))
+	if err := os.Rename(filepath.Join(dir, "real.next"), filepath.Join(dir, "real.lua")); err != nil {
+		t.Fatal(err)
+	}
 	assertContent(t, link, "second")
 
-	// Replacing the symlink itself (atomic-rename editors do this).
+	// Replacing the symlink itself (atomic-rename editors do this):
+	// the new link is created at a temp name and renamed into place.
 	atomicWrite(t, filepath.Join(dir, "other.lua"), "third")
-	symlink(t, filepath.Join(dir, "other.lua"), link)
-	assertContent(t, link, "third")
-}
-
-func real(dir, name string) string { return filepath.Join(dir, name) }
-
-func symlink(t *testing.T, target, link string) {
-	t.Helper()
-	if err := os.Symlink(target, link); err != nil {
+	tmpLink := link + ".tmp"
+	if err := os.Symlink(filepath.Join(dir, "other.lua"), tmpLink); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
+	if err := os.Rename(tmpLink, link); err != nil {
+		t.Fatal(err)
+	}
+	assertContent(t, link, "third")
 }
 
 func atomicWrite(t *testing.T, path, content string) {

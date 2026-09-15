@@ -267,7 +267,10 @@ int main(void) {
 		luaL_requiref(L, LUA_TABLIBNAME, luaopen_table, 1);
 		luaL_requiref(L, LUA_STRLIBNAME, luaopen_string, 1);
 		lua_pop(L, 3);
-		const char *banned[] = {"os", "io", "dofile", "loadfile", "require", "load", "debug", NULL};
+		// print and warn are stripped too: the framed response is the only
+	// thing this process may write to stdout, and a script that prints
+	// would corrupt the framing. Scripts have no output channel.
+	const char *banned[] = {"os", "io", "print", "warn", "dofile", "loadfile", "require", "load", "debug", NULL};
 		for (int i = 0; banned[i]; i++) {
 			lua_pushnil(L);
 			lua_setglobal(L, banned[i]);

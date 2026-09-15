@@ -31,6 +31,12 @@ string target or nil.
   access: those libraries are absent from the isolated helper, and a
   hard 8 MiB allocation cap plus an instruction budget bound every
   run.
+- No output channel either: `print` and `warn` are unavailable, so a
+  script cannot corrupt the helper's framed responses. Scripts return
+  decisions; they do not log.
+- Invalid URLs never reach the script: only well-formed http/https
+  URLs are evaluated, with the scheme/host normalized exactly like
+  the static router (lowercase, one trailing host dot stripped).
 - Returning an unknown target, raising an error, timing out, or
   exceeding the memory cap falls back to the static rules for that
   URL and records a safe, URL-free category. A browser launching is

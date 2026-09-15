@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -61,18 +62,29 @@ func NewProvider(helperPath, scriptPath string) *Provider {
 	return &Provider{HelperPath: helperPath, ScriptPath: scriptPath, Clock: time.Now}
 }
 
-// ReadScript loads one immutable script snapshot. It is called once per
-// URL: os.ReadFile opens the file once, so an atomic-rename replacement
-// never affects an in-flight read, and a partially written file surfaces
-// here (or as a script-load-error in the helper) instead of being
-// served stale. Symlinked paths resolve naturally through the open.
-// There is deliberately no cache: the next URL re-reads the file.
+// readFile is the script source seam; tests replace it to simulate
+// unstable mid-read edits.
+var readFile = os.ReadFile
+
+// ReadScript loads one immutable script snapshot with unstable-read
+// rejection: the file is read twice and a disagreement between the two
+// reads means a writer is mid-edit — the read is rejected visibly so a
+// torn partial script is never served. An atomic-rename edit racing an
+// open may therefore reject that one open; the next URL applies the
+// new script. There is deliberately no cache: every URL re-reads.
 func ReadScript(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
+	first, err := readFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read route script: %w", err)
 	}
-	return data, nil
+	second, err := readFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read route script: %w", err)
+	}
+	if !bytes.Equal(first, second) {
+		return nil, fmt.Errorf("route script changed while reading; retry the open")
+	}
+	return second, nil
 }
 
 // Decide evaluates one URL: it takes a fresh script snapshot, injects
@@ -83,15 +95,28 @@ func ReadScript(path string) ([]byte, error) {
 // with StatusError are per-URL runtime failures: the caller falls back
 // to static rules and records the category.
 func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
+	// URL validation precedes everything: malformed or non-http(s)
+	// URLs never reach the script or the helper (contract-safe
+	// handling, identical to the static router's rejection).
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return Result{}, fmt.Errorf("invalid url: %w", err)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return Result{}, fmt.Errorf("invalid url: unsupported scheme %q (only http and https are routed)", scheme)
+	}
+
 	script, err := ReadScript(p.ScriptPath)
 	if err != nil {
 		return Result{}, err
 	}
 
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return Result{}, fmt.Errorf("parse url: %w", err)
-	}
+	// Contract normalization, identical to the static router's host
+	// matching: scheme lowercased, host lowercased with one trailing
+	// dot stripped, no IDN conversion, userinfo never exposed.
+	host := strings.ToLower(u.Hostname())
+	host = strings.TrimSuffix(host, ".")
 	port := u.Port()
 
 	epoch := p.Clock().Unix()
@@ -99,8 +124,8 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 		{"script", string(script)},
 		{"epoch", fmt.Sprintf("%d", epoch)},
 		{"url.original", rawURL},
-		{"url.scheme", u.Scheme},
-		{"url.host", u.Hostname()},
+		{"url.scheme", scheme},
+		{"url.host", host},
 		{"url.port", port},
 		{"url.path", u.Path},
 		{"url.query", u.RawQuery},
