@@ -1,7 +1,7 @@
 ---
 id: TASK-0027
 title: Adopt the selected Brouter menu-bar icon
-status: doing
+status: done
 depends_on: []
 tags: [macos, icon]
 ---
@@ -28,4 +28,4 @@ Run focused native/package tests and both source/Nix builds. Inspect the selecte
 Recent Activity changes, Lua runtime/config work, Linux tray support, login items, browser chooser, app-wide branding, default-browser changes, or installed-app replacement.
 
 ## Notes
-PR30 preview candidate C: `docs/assets/menu-bar-icon-previews/candidate-c-ascending-stem.svg`. PR30 must remain the provenance for the selected asset; this implementation may be stacked on its open branch until the preview PR merges.
+PR30 preview candidate C: `docs/assets/menu-bar-icon-previews/candidate-c-ascending-stem.svg`. PR30 remains the provenance for the selected asset; the implementation delivered the asset through PR31. Static asset/package checks passed, while live GUI light/dark/menu interaction remains explicitly untested because replacing/launching the installed app was not authorized.
