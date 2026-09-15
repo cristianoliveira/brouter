@@ -6,25 +6,37 @@ root, reproduce the Go probes in a fresh throwaway module with:
 
 ```
 rm -rf .tmp/eval && mkdir -p .tmp/eval
-cp docs/lua-runtime-evaluation-evidence/gopher_test.go .tmp/eval/
-cp docs/lua-runtime-evaluation-evidence/spawn_test.go .tmp/eval/
+sed '1{/^\/\/go:build ignore$/d;}' docs/lua-runtime-evaluation-evidence/gopher_test.go > .tmp/eval/gopher_test.go
+sed '1{/^\/\/go:build ignore$/d;}' docs/lua-runtime-evaluation-evidence/spawn_test.go > .tmp/eval/spawn_test.go
 cd .tmp/eval
 go mod init example.com/brouter-lua-eval
 go get github.com/yuin/gopher-lua@v1.1.1
-go test -tags ignore -run 'Test(Sandbox|Timeout|ErrorMapping)$' -v
-go test -tags ignore -run TestSubprocessSpawnLatency -v
+go test -run 'Test(Sandbox|ErrorMapping)$' -v
+timeout_rc=0; go test -run TestTimeout -v || timeout_rc=$?
+test "$timeout_rc" -eq 1
+go test -run TestSubprocessSpawnLatency -v
 ```
 
-The `ignore` tag includes the reference files without changing them. The
+The `sed` copies remove only the reference build constraint in the
+throwaway module; ordinary `go test` then runs only these copied files.
+`TestTimeout` is expected to exit 1 because the candidate lacks a hard
+timeout, and the `test` assertion makes an unexpected result fail. The
 recorded outputs were collected in that throwaway module; its setup is
 not committed.
 
-## gopher-lua v1.1.1 — `go test -tags ignore -run 'Test(Sandbox|Timeout|ErrorMapping)$' -v` (gopher_test.go)
+## gopher-lua v1.1.1 — `go test -run 'Test(Sandbox|ErrorMapping)$' -v` (gopher_test.go)
 
 ```
 --- PASS: TestSandbox (0.00s)
---- FAIL: TestTimeout (2.20s)
 --- PASS: TestErrorMapping (0.00s)
+PASS
+```
+
+The timeout probe is intentionally run separately because it is expected
+to fail for this candidate:
+
+```
+--- FAIL: TestTimeout (2.20s)
 ```
 
 TestTimeout failed its 2-second grace after `L.Close()`: the infinite
@@ -73,6 +85,6 @@ spawn_test.go:19: subprocess spawn+exit: 9.05 ms/roundtrip (100 iterations)
 
 This is a raw `/usr/bin/true` fork/exec baseline — NOT a Lua runner
 measurement. FD inheritance and rlimit behavior of a real runner are
-unprobed (see the evaluation's unknowns). The command is reproducible after the throwaway setup above; its
-setup was not run by repository CI and the result remains only a raw
-baseline, not runner evidence.
+unprobed (see the evaluation's unknowns). The command is reproducible
+after the throwaway setup above; its setup was not run by repository CI
+and the result remains only a raw baseline, not runner evidence.
