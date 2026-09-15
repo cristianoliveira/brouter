@@ -1,29 +1,44 @@
 ---
 id: TASK-0029
-title: Implement the isolated Lua bridge and per-URL snapshot loader
+title: Implement the external routing command protocol
 status: doing
 depends_on: [TASK-0028]
-tags: [lua, runtime, security]
+tags: [routing, command, security]
 ---
 
-# Implement the isolated Lua bridge and per-URL snapshot loader
+# Implement the external routing command protocol
 
 ## Problem
-The approved Lua contract and feasibility evaluation now need a bounded implementation seam that cannot expose host capabilities or serve stale configuration after edits.
+Users want routing logic in any language they choose, without embedding or vendoring a language runtime. The runner is trusted local code, so the boundary must be explicit rather than pretending to sandbox it.
 
 ## Outcome
-A focused provider/bridge slice evaluates an optional `route(ctx)` through an isolated C Lua 5.4 helper process, with explicit Go-side snapshot and result boundaries. Existing no-script routing remains unchanged.
+Brouter can invoke an opt-in executable plus argv directly for each URL and consume a small versioned JSON protocol. The Lua helper design is superseded for this product slice and must not be merged; its commits and QA remain historical evidence only.
+
+## Protocol
+Input is one bounded JSON object on stdin:
+
+```json
+{"version":1,"url":{"original":"https://example.com/x?a=1#f","scheme":"https","host":"example.com","port":"","path":"/x","query":"a=1","fragment":"f"},"utils":{"epoch":1700000000,"utc":{"year":2023,"month":11,"day":14,"hour":22,"min":13,"sec":20}}}
+```
+
+Output is one bounded JSON object on stdout:
+
+```json
+{"version":1,"route":"work-browser"}
+```
+
+`route` is either an exact configured target ID or `null` for explicit defer. No extra output, trailing data, stderr diagnostics, or protocol extensions are accepted in v1.
 
 ## Acceptance criteria
-- [ ] Pin and build the selected C Lua 5.4.7 helper for the supported source/Nix targets; keep the Go router free of cgo and do not claim unsupported platforms.
-- [ ] Expose only the contract fields and helpers: immutable `ctx.url`, one-sample UTC `ctx.utils.epoch()`/`utc()`, and a string-or-nil route result. No filesystem, network, process, environment, package, debug, or shell capability is reachable from Lua.
-- [ ] Create one immutable TOML-plus-Lua snapshot per URL. Re-read current files for the next URL without restart; an in-flight request keeps its snapshot. Preserve symlink replacement and atomic-rename behavior; reject missing, malformed, invalid, or unstable reads visibly, with no stale last-known-good or wrong-target fallback.
-- [ ] Enforce a wall/instruction timeout and bounded allocation in the helper; map timeout, runtime error, invalid return, unknown target, and load failures to safe categories without URL/script/target leakage. Keep downstream browser outcome unknown.
-- [ ] Provide injectable clock, fixed URL, helper result, loader, and process/error seams for deterministic tests. Do not mutate user config, defaults, LaunchServices, or installed applications.
-- [ ] Document the C-helper/subprocess tradeoff: strongest available timeout/isolation path from the evaluation, but memory/process controls remain measured only where tests prove them.
+- [ ] Replace Lua-specific runtime/build/dependency work with direct argv execution; never interpolate a command through a shell. Support Bash, Python, Lua, or any executable selected by the user through the same command array.
+- [ ] Bound stdin context and stdout/stderr capture, enforce a hard per-URL timeout, kill the child on timeout, and classify nonzero exit, timeout, malformed/trailing output, protocol/version errors, and unknown target with fixed redacted categories.
+- [ ] Validate returned target IDs against the current TOML snapshot. Only explicit `null` defers to ordered static rules; failures are visible and never silently fall back. Preserve byte-exact URL original only according to the resolved credential policy; do not leak secrets in errors or activity logs.
+- [ ] Load the current TOML for each URL with bounded observed-change detection. Keep selected config bytes immutable for the URL; document that independently saved files or a stationary syntactically valid partial write cannot be distinguished, and recommend atomic saves. No watcher or indefinite retry.
+- [ ] Keep the Go router free of language/runtime dependencies. Do not claim sandboxing: configured commands have the user’s host permissions and may read/write files, access network, launch processes, or mutate configuration.
+- [ ] Provide injectable clock, command runner, loader, decoder, and process/error seams for deterministic tests. Do not mutate defaults, LaunchServices, installed applications, or the real personal configuration.
 
 ## Verification
-Add focused unit/contract tests for bridge mapping, capability denial, redaction, snapshot identity, symlink/atomic rename/unstable-read cases, and no-script compatibility. Run source and Nix package checks on available supported targets; label unavailable runs explicitly.
+Add focused protocol, timeout/output-bound, target-validation, redaction, observed-config-change, URL-field, no-command, and static-compatibility tests. Run source/Nix package checks on available targets and label unavailable platform evidence.
 
 ## Non-goals
-Whole-config Lua, implicit migration, file watchers, silent fallback, browser/page-load claims, arbitrary host APIs, or changing the live personal dotfiles configuration.
+Embedded Lua, runtime sandboxing, arbitrary shell strings, implicit migration, file watchers, silent fallback, browser/page-load claims, or live personal-config changes.

@@ -1,28 +1,29 @@
 ---
 id: TASK-0030
-title: Implement opt-in Lua routing integration
+title: Integrate the opt-in external routing command
 status: todo
 depends_on: [TASK-0029]
-tags: [lua, routing, config]
+tags: [routing, command, config]
 ---
 
-# Implement opt-in Lua routing integration
+# Integrate the opt-in external routing command
 
 ## Problem
-Adding scripted routing can change precedence, fallback, explain output, or existing configurations unless the hook is explicitly opt-in and shares the current loader and router pipeline.
+A user-selected command must extend routing without changing configurations that omit it or silently hiding command failures.
 
 ## Outcome
-An opt-in TOML shape enables a Lua route hook without changing configurations that omit it, while `open`, `explain`, and `validate` use the same current-file snapshot and safe diagnostics.
+An explicit TOML command array enables a language-independent route decision before static rules. `open`, `explain`, and `validate` use clearly defined command semantics; no-script configurations remain unchanged.
 
 ## Acceptance criteria
-- [ ] Implement and document the smallest explicit script activation shape; absent script means byte-compatible current static routing. Do not migrate or rewrite existing TOML automatically.
-- [ ] Preserve pipeline order: script target short-circuits static rules; nil defers to current first-match rules and default. Unknown target, runtime error, timeout, malformed script, or load failure follows the approved visible fail-closed policy without wrong-target or last-known-good fallback.
-- [ ] Route `open` and `explain` through the same snapshot/bridge seam; `validate` checks script presence and syntax without executing `route`. Keep CLI exit/output contracts and privacy redaction stable.
-- [ ] Support edits for the next URL without restart, with in-flight snapshot stability. Define and test symlink replacement, atomic rename, partial/unstable reads, missing files, and independently edited TOML/script boundaries.
-- [ ] Keep resident macOS event forwarding unchanged except for invoking the per-event loader; do not alter URL routing, browser defaults, LaunchServices, installed app state, or headless behavior when script is absent.
+- [ ] Implement the smallest explicit config shape for an executable plus argv. An absent command means byte-compatible current static routing; do not migrate or rewrite existing TOML.
+- [ ] Preserve pipeline order: command target short-circuits static rules; explicit null defers to declaration-order rules and default. Unknown target, timeout, nonzero exit, malformed output, protocol/version error, or unavailable command is a visible fixed redacted failure with no silent static fallback.
+- [ ] Define `validate` as command/config shape and executable-path validation only; it must not execute user code. Define `explain` explicitly (execute the command or report it as unavailable) and preserve CLI output/privacy contracts. Do not claim external commands are side-effect-free.
+- [ ] Invoke argv directly with no shell interpolation. Pass one bounded JSON context, cap stdout/stderr, enforce hard timeout, and ensure child termination. Do not expose credentials if the selected URL policy rejects userinfo; otherwise document the trusted-code exposure explicitly.
+- [ ] Load current TOML for each URL, retain selected bytes immutably during that URL, support next-URL edits without restart, and document bounded observed-change detection and independently saved-file limitations.
+- [ ] Keep resident macOS forwarding unchanged except per-event invocation; do not alter browser defaults, LaunchServices, installed applications, or headless behavior when command is absent.
 
 ## Verification
-Use current TOML fixtures as golden no-script behavior. Add opt-in script fixtures for defer, target, error, timeout, unknown target, edit/reload, and redaction. Run focused source/Nix checks on available targets and label unavailable platform evidence.
+Use current TOML fixtures as golden no-command behavior. Add command fixtures for defer, target, unknown target, timeout, nonzero exit, malformed/trailing output, oversized output, version mismatch, missing executable, edit/reload, redaction, and side-effect boundaries. Run focused source/Nix checks on available targets and label unavailable platform evidence.
 
 ## Non-goals
-Whole-config Lua, implicit migration, watcher-owned mutable state, browser outcome claims, or live personal-config edits.
+Embedded Lua, sandbox guarantees, arbitrary shell command strings, implicit migration, watcher-owned mutable state, browser outcome claims, or live personal-config edits.
