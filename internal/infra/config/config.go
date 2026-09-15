@@ -56,9 +56,16 @@ type ruleSpec struct {
 }
 
 type fileFormat struct {
-	Default  string                 `toml:"default"`
-	Browsers map[string]browserSpec `toml:"browsers"`
-	Rules    []ruleSpec             `toml:"rules"`
+	Default      string                 `toml:"default"`
+	Browsers     map[string]browserSpec `toml:"browsers"`
+	Rules        []ruleSpec             `toml:"rules"`
+	RouteCommand *routeCommandSpec      `toml:"route_command"`
+}
+
+// routeCommandSpec is the opt-in external routing command table. The
+// command is direct argv (executable first), never a shell string.
+type routeCommandSpec struct {
+	Command []string `toml:"command"`
 }
 
 // Config is the validated, domain-ready configuration.
@@ -66,6 +73,9 @@ type Config struct {
 	Default domain.Target
 	Targets map[string]TargetDefinition
 	Rules   []domain.Rule
+	// RouteCommand is the direct argv of the opt-in external routing
+	// command (nil when not configured). It is never a shell string.
+	RouteCommand []string
 }
 
 // DefaultPath returns the one documented Unix user configuration
@@ -134,6 +144,25 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// validateRouteCommand checks the route_command section's structure
+// only: the command is never resolved or executed (validate stays
+// side-effect free); resolvability is checked at first use.
+func validateRouteCommand(path string, spec *routeCommandSpec) []error {
+	if spec == nil {
+		return nil
+	}
+	var errs []error
+	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
+		errs = append(errs, fmt.Errorf("%s: route_command: command must be a non-empty argv array starting with the executable", path))
+	}
+	for i, a := range spec.Command {
+		if a == "" {
+			errs = append(errs, fmt.Errorf("%s: route_command: command argv[%d] is empty", path, i))
+		}
+	}
+	return errs
+}
+
 func validate(path string, file fileFormat) (*Config, error) {
 	fail := func(field string, format string, args ...any) error {
 		return fmt.Errorf("%s: %s: %s", path, field, fmt.Sprintf(format, args...))
@@ -145,9 +174,14 @@ func validate(path string, file fileFormat) (*Config, error) {
 		errs = append(errs, fail("default", "default target is required"))
 	}
 
+	errs = append(errs, validateRouteCommand(path, file.RouteCommand)...)
+
 	cfg := &Config{
 		Default: domain.Target(file.Default),
 		Targets: make(map[string]TargetDefinition, len(file.Browsers)),
+	}
+	if file.RouteCommand != nil {
+		cfg.RouteCommand = file.RouteCommand.Command
 	}
 
 	// Sorted names make aggregated diagnostics deterministic regardless of

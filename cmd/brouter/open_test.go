@@ -217,3 +217,129 @@ func TestOpenRejectsMultipleURLArguments(t *testing.T) {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 }
+
+// route_command happy path: the command answers with an exact target
+// ID and that target is launched even though no static rule matches.
+func TestOpenRouteCommandAnswersTarget(t *testing.T) {
+	// Given a route_command that answers {"version":1,"route":"fake"},
+	// when open runs, the fake browser receives the URL and no rule was
+	// needed.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	routerCmd := filepath.Join(dir, "router.sh")
+	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":\"fake\"}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[route_command]
+command = [%q]
+`, routerCmd))
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://example.com/x")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "https://example.com/x" {
+		t.Errorf("browser argv = %q, want exactly the URL", argv)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+}
+
+// An explicit route:null defers to the ordered static rules.
+func TestOpenRouteCommandNullDefersToStaticRules(t *testing.T) {
+	// Given a command that defers, when open runs a URL matched by a
+	// static rule, the static rule's target is launched.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	routerCmd := filepath.Join(dir, "router.sh")
+	if err := os.WriteFile(routerCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":null}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`, routerCmd))
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://docs.example/page")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "https://docs.example/page" {
+		t.Errorf("browser argv = %q, want the static rule's launch", argv)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+}
+
+// Unknown targets and command failures are visible and never silently
+// fall back to static rules.
+func TestOpenRouteCommandFailuresAreVisible(t *testing.T) {
+	dir := t.TempDir()
+	browser, _ := writeFakeBrowser(t, dir, 0)
+	unknownCmd := filepath.Join(dir, "unknown.sh")
+	if err := os.WriteFile(unknownCmd, []byte("#!/bin/sh\nprintf '{\"version\":1,\"route\":\"not-a-target\"}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	failCmd := filepath.Join(dir, "fail.sh")
+	if err := os.WriteFile(failCmd, []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base := executableTargetConfig(browser) + `
+[[rules]]
+name = "would-also-match"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`
+	path := writeConfig(t, fmt.Sprintf(base, unknownCmd))
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://docs.example/page")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "unknown target") {
+		t.Fatalf("unknown target must fail visibly: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	path = writeConfig(t, fmt.Sprintf(base, failCmd))
+	code, stdout, stderr = runCapture(t, "", "open", "--config", path, "https://docs.example/page")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "route_command: command failed") {
+		t.Fatalf("command failure must fail visibly: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+// URL acceptance precedes the spawn; credentials never appear anywhere.
+func TestOpenRouteCommandURLPrevalidation(t *testing.T) {
+	dir := t.TempDir()
+	browser, _ := writeFakeBrowser(t, dir, 0)
+	neverSpawned := filepath.Join(dir, "never-spawned")
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[route_command]
+command = [%q]
+`, neverSpawned))
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, "https://user:secret@example.com/x")
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want visible failure", code)
+	}
+	if !strings.Contains(stderr, "userinfo credentials are not supported") {
+		t.Errorf("stderr = %q, want the fixed redacted message", stderr)
+	}
+	if strings.Contains(stderr, "secret") {
+		t.Errorf("credentials must never appear: %q", stderr)
+	}
+	_ = stdout
+}

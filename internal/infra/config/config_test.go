@@ -444,3 +444,36 @@ profile = "Profile 1"
 		t.Error("ProfileSet = false, want true")
 	}
 }
+
+// route_command is validated structurally only: never resolved, never
+// executed. Empty argv, empty executable, or empty elements fail.
+func TestValidateRouteCommandStructureOnly(t *testing.T) {
+	cases := []struct {
+		name    string
+		section string
+		ok      bool
+		wantErr string
+	}{
+		{"absent section is fine", "", true, ""},
+		{"valid argv", "\n[route_command]\ncommand = [\"/bin/sh\", \"/p/r.sh\"]\n", true, ""},
+		{"empty argv", "\n[route_command]\ncommand = []\n", false, "non-empty argv array"},
+		{"empty executable", "\n[route_command]\ncommand = [\"\"]\n", false, "non-empty argv array"},
+		{"empty element", "\n[route_command]\ncommand = [\"/bin/sh\", \"\"]\n", false, "argv[1] is empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			content := "default = \"personal\"\n\n[browsers.personal]\nbrowser = \"brave\"\n" + tc.section
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if tc.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.ok && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
