@@ -14,6 +14,13 @@ deterministic injected UTC, per-invocation timeout, bounded memory,
 safe error categories, arm64 + Linux builds, maintenance, licensing,
 offline reproducibility.
 
+This is a **feasibility recommendation, not a security or runtime
+acceptance** decision. Claim taxonomy used throughout: **measured** =
+run in this evaluation; **proposed** = mechanism exists in the pinned
+artifact but was not exercised here; **unknown** = no evidence
+obtained. Untested limits and platforms are always marked, never
+assumed.
+
 ## Candidates
 
 | # | Candidate | Kind | Pin |
@@ -135,8 +142,8 @@ not available and is recorded as **unknown**, not as support.
 | Allowlist stdlib | measured ✓ | measured ✓ | unknown | by construction ✓ | by construction ✓ |
 | No I/O/process/env | ✓ (stripped) | ✓ (never loaded) | unknown | ✓ (no imports) | ✓ (OS-enforced) |
 | Injected deterministic UTC | measured ✓ | measured ✓ | unverified | design ✓ | host feeds runner ✓ |
-| Hard timeout | **✗ native gap** | **measured ✓** | unknown | ✓ (context) | ✓ (kill) |
-| Memory limit | ✗ (no knob) | unprobed (mechanism exists) | unknown | ✓ (limiter) | unprobed (rlimits/kill) |
+| Hard timeout | **✗ measured gap** | **measured ✓** | unknown | proposed (context; unexercised) | proposed (kill; by construction) |
+| Memory limit | ✗ (no knob) | proposed (allocator cap/hook; unprobed) | unknown | proposed (limiter; unexercised) | proposed (rlimits/kill; unprobed) |
 | Error mapping | measured ✓ | measured ✓ | unknown | design ✓ | unprobed |
 | arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | presumed ✓ unverified | ✓ (wazero) | build-only evidence; run **unknown** |
 | Maintenance | MIT, low churn, 1 maintainer | MIT, reference, ultra-stable | Apache-2.0, small project | MIT, active | n/a (self-owned) |
