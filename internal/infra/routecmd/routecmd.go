@@ -54,7 +54,7 @@ var (
 	ErrInvalidResponse     = errors.New("route_command: invalid response")
 	ErrCommandCanceled     = errors.New("route_command: canceled")
 	ErrUserinfoUnsupported = errors.New(
-		"invalid url: userinfo credentials are not supported for external command routing")
+		"invalid url: userinfo credentials are not supported for external routing command")
 	// ErrCommandCanceled reports caller-initiated cancellation (fixed
 	// redacted text; the parent's cancel reason is not echoed).
 )
