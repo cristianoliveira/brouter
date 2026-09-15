@@ -151,12 +151,17 @@ type urlFields struct {
 // decodeDecision enforces the v1 output contract exactly: the whole
 // output is one line — a non-empty UTF-8 target ID with an optional
 // single terminal LF or CRLF — or the reserved @default literal
-// (explicit defer). Empty output, embedded line breaks, extra lines,
-// and non-UTF-8 bytes are visible failures.
+// (explicit defer). At most ONE terminal ending is stripped; anything
+// still carrying CR/LF afterwards (extra lines, embedded breaks, a
+// second terminal ending) is a visible failure, as is empty output or
+// non-UTF-8 bytes.
 func decodeDecision(stdout []byte) (Result, error) {
 	line := stdout
-	line = bytes.TrimSuffix(line, []byte("\r\n"))
-	line = bytes.TrimSuffix(line, []byte("\n"))
+	if bytes.HasSuffix(line, []byte("\r\n")) {
+		line = line[:len(line)-2]
+	} else if bytes.HasSuffix(line, []byte("\n")) {
+		line = line[:len(line)-1]
+	}
 
 	if len(line) == 0 {
 		return Result{}, fmt.Errorf("%w: empty output", ErrInvalidResponse)

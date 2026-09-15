@@ -264,3 +264,28 @@ func TestCommanderParentCancelKillsGroupPromptly(t *testing.T) {
 		t.Fatalf("cancellation took %v — descendants were not killed promptly", elapsed)
 	}
 }
+
+// Exactly one terminal LF or CRLF is allowed: double terminal endings
+// are rejected, not silently double-trimmed.
+func TestCommanderDoubleTerminalEndingsRejected(t *testing.T) {
+	mustScript(t)
+	for _, tc := range []struct {
+		name string
+		out  string
+	}{
+		{"lf then crlf", `printf 'target\n\r\n'`},
+		{"crlf then lf", `printf 'target\r\n\n'`},
+		{"two lfs", `printf 'target\n\n'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCommander(t, writeCommand(t, tc.out))
+			res, err := c.Decide(context.Background(), "https://example.com/x")
+			if !errors.Is(err, ErrInvalidResponse) {
+				t.Fatalf("err = %v, want invalid response", err)
+			}
+			if res != (Result{}) {
+				t.Fatalf("no partial result: %+v", res)
+			}
+		})
+	}
+}
