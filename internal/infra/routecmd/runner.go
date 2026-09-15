@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -60,33 +59,34 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	cmd.SysProcAttr = groupAttr()
 	cmd.Stdin = bytes.NewReader(stdin)
 
-	// The overflow kill is wired BEFORE Start with a nil-process
-	// guard: the writer's Write can race the Start that fills
-	// cmd.Process, so the process pointer crosses an atomic and the
-	// callback no-ops until it is published. Without this, an
-	// instantly-overflowing command would race the assignment.
-	var proc atomic.Pointer[os.Process]
+	// The overflow kill is wired BEFORE Start through a kill gate: a
+	// kill fired before publication is recorded as pending and
+	// executes the instant the process is published — an
+	// instantly-overflowing child is terminated immediately and
+	// deterministically, never racing publication.
+	gate := &killGate{}
 	out := newCappedWriter(OutputCap)
 	errOut := newCappedWriter(OutputCap)
-	out.kill = func() { killGroup(proc.Load()) }
-	errOut.kill = out.kill
+	out.kill = gate.kill
+	errOut.kill = gate.kill
 	cmd.Stdout = out
 	cmd.Stderr = errOut
 
 	if err := cmd.Start(); err != nil {
 		// A pre-canceled or expired context fails in Start; classify
 		// that as the caller's cancellation, not an unavailable
-		// command. Everything else is genuinely unspawnable.
+		// command. Any pending kill is simply dropped with the failed
+		// start — nothing is left to hang.
 		return nil, startFailure(err)
 	}
-	proc.Store(cmd.Process)
+	gate.publish(cmd.Process)
 
 	// Kill triggers: the deadline timer AND parent cancellation both
 	// kill the WHOLE process group immediately — CommandContext alone
 	// kills only the direct child, leaving descendants to hold the
 	// pipes and stall the decision past the caller's patience.
 	killOnce := sync.Once{}
-	killNow := func() { killOnce.Do(func() { killGroup(cmd.Process) }) }
+	killNow := func() { killOnce.Do(func() { gate.kill() }) }
 	killer := time.AfterFunc(Timeout, killNow)
 	defer killer.Stop()
 	ctxWatch := make(chan struct{})
@@ -136,8 +136,8 @@ func groupAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true}
 }
 
-// killGroup kills the child's whole process group where supported.
-func killGroup(p *os.Process) {
+// killProcess kills the child's whole process group where supported.
+func killProcess(p *os.Process) {
 	if p == nil {
 		return
 	}

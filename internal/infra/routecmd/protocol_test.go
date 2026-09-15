@@ -328,3 +328,22 @@ func TestCommanderPreCanceledContextClassification(t *testing.T) {
 		t.Fatalf("err = %v, want command-canceled", err)
 	}
 }
+
+// An instantly-overflowing child (output exceeds the cap in the first
+// write, potentially before the process pointer is published) still
+// yields a fast command-output-cap decision — no panic, no hang.
+func TestCommanderInstantOverflowKills(t *testing.T) {
+	mustScript(t)
+	// Kelly's repro shape: >4KiB immediately, then a long sleep.
+	c := newCommander(t, writeCommand(t, `head -c 9000 /dev/zero; sleep 30`))
+	start := time.Now()
+	_, err := c.Decide(context.Background(), "https://example.com/x")
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, ErrCommandOutputCap) {
+		t.Fatalf("err = %v, want output cap", err)
+	}
+	if elapsed >= Timeout {
+		t.Fatalf("instant overflow took %v — must return immediately", elapsed)
+	}
+}
