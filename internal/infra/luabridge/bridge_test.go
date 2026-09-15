@@ -289,7 +289,7 @@ func TestHelperFailureCategories(t *testing.T) {
 		{"runtime error", routeWrapper(fmt.Sprintf(`error("boom")`)), StatusError, "script-error"},
 		{"infinite loop", routeWrapper(fmt.Sprintf(`while true do end`)), StatusError, "script-timeout"},
 		{"memory flood", routeWrapper(fmt.Sprintf(`local t = {} while true do t[#t+1] = string.rep('x', 100000) end`)), StatusError, "memory-cap"},
-		{"invalid return", routeWrapper(fmt.Sprintf(`return 42`)), StatusError, "invalid-return"},
+		{"invalid return", routeWrapper(fmt.Sprintf(`return 42`)), StatusError, "script-error"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -61,9 +61,10 @@ The tree is not carried in the repository:
 - Nix builds fetch and verify the pinned tarball hermetically
   (fetchzip); after the first fetch they build offline.
 - Non-nix builds bootstrap once via `scripts/fetch-lua.sh`
-  (sha256-verified, cached in `.cache/lua-5.4.7/`); go test invokes it
-  automatically. An offline bootstrap without a cache fails with setup
-  guidance — nothing is downloaded implicitly.
+  (sha256-verified, cached in `.cache/lua-5.4.7/`). `go test` invokes
+  this bootstrap automatically — that is an explicit, hash-checked
+  download of exactly the pinned tarball (never anything else); an
+  offline bootstrap without a cache fails with setup guidance.
 
 Isolation is unchanged: the same capability libraries are excluded
 from the link, and the Go router stays CGO-free.

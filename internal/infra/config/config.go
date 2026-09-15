@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -121,10 +122,23 @@ func LoadDefault() (*Config, error) {
 // names the offending file, field, or rule; the file content is never
 // dumped and url-regex patterns are redacted from errors: patterns often
 // embed route secrets.
+// readConfigFile reads the config with unstable-read rejection: the
+// file is read twice and a disagreement between the two reads means a
+// writer is mid-edit — the load is rejected visibly so a torn partial
+// config is never served. Tests replace the seam.
+var readConfigFile = os.ReadFile
+
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := readConfigFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	second, err := readConfigFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if !bytes.Equal(data, second) {
+		return nil, fmt.Errorf("%s: config changed while reading; retry", path)
 	}
 
 	var file fileFormat

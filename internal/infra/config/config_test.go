@@ -444,3 +444,26 @@ profile = "Profile 1"
 		t.Error("ProfileSet = false, want true")
 	}
 }
+
+// A config rewritten mid-read is rejected visibly: the two snapshot
+// reads disagree, so Load fails instead of serving a torn file.
+func TestLoadRejectsUnstableRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("stable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original := readConfigFile
+	calls := 0
+	readConfigFile = func(string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte("torn"), nil
+		}
+		return []byte("rewritten"), nil
+	}
+	defer func() { readConfigFile = original }()
+
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "changed while reading") {
+		t.Fatalf("unstable read must be rejected visibly, got err=%v", err)
+	}
+}

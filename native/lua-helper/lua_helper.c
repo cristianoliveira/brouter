@@ -213,14 +213,16 @@ static void evaluate(lua_State *L, const char *script,
 		*status = "nil";
 		return;
 	}
+	// A non-string return is a script bug, same class as a runtime
+	// error (contract: script-error, not a separate category).
 	if (lua_type(L, -1) != LUA_TSTRING) {
-		*category = "invalid-return"; // numbers/tables are not targets
+		*category = "script-error";
 		return;
 	}
 	size_t len = 0;
 	const char *t = lua_tolstring(L, -1, &len);
 	if (len > MAX_TARGET_LEN) {
-		*category = "invalid-return";
+		*category = "script-error";
 		return;
 	}
 	char *copy = malloc(len + 1);
