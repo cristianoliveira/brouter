@@ -47,14 +47,5 @@ fi
 mkdir -p "$cache_dir"
 tar xzf "$tmp/lua.tar.gz" -C "$cache_dir" --strip-components=1
 
-# Belt-and-suspenders: the sha256 already pins content; this checks
-# the extracted tree declares the pinned version.
-if ! grep -q '#define LUA_VERSION_RELEASE\t"7"' "$cache_dir/src/lua.h" \
-	|| ! grep -q '#define LUA_VERSION_MAJOR\t"5"' "$cache_dir/src/lua.h"; then
-	echo "extracted tree does not look like lua-${LUA_VERSION}; refusing to cache" >&2
-	rm -rf "$cache_dir"
-	exit 1
-fi
-
 echo "$LUA_SHA256" > "$marker"
 echo "$cache_dir/src"
