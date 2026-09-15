@@ -1,8 +1,8 @@
 # External routing command (TASK-0029)
 
 Opt-in routing logic in any language: brouter invokes your executable
-directly by argv (never through a shell) once per URL and reads a small
-versioned JSON decision.
+directly by argv (never through a shell) once per URL, feeds it the
+URL on stdin, and reads back a single-line decision.
 
 ## Configuration
 
@@ -49,8 +49,9 @@ work-browser
   size limit`, `route_command: invalid response`, and
   `route_command: unknown target`. URLs and command output never
   appear in errors.
-- Every failure is visible and stops the open. Only `route:null`
-  falls back to static rules; failures never silently do so.
+- Every failure is visible and stops the open. Only the exact
+  `@default` line defers to the ordered static rules; failures never
+  silently do so.
 
 Malformed URLs, non-http(s) schemes, empty hosts, and URLs containing
 userinfo credentials are rejected before the command is spawned

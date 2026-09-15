@@ -222,3 +222,21 @@ func TestCommanderDescendantCannotHangTheTimeout(t *testing.T) {
 		t.Fatal("descendant-held pipes hung past the timeout")
 	}
 }
+
+// Output overflow kills the process group immediately: the decision
+// returns command-output-cap fast, not at the deadline.
+func TestCommanderOutputCapKillsImmediately(t *testing.T) {
+	mustScript(t)
+	// 5s of continuous output: with immediate kill this returns in ~ms;
+	// with wait-until-deadline behavior it would take the full 2s.
+	c := newCommander(t, writeCommand(t, `while true; do printf 'x%.0s' $(seq 1 500); done`))
+	start := time.Now()
+	_, err := c.Decide(context.Background(), "https://example.com/x")
+	elapsed := time.Since(start)
+	if !errors.Is(err, ErrCommandOutputCap) {
+		t.Fatalf("err = %v, want output cap", err)
+	}
+	if elapsed >= Timeout {
+		t.Fatalf("cap decision took %v — overflow must kill immediately, not wait for the deadline", elapsed)
+	}
+}

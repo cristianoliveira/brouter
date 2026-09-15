@@ -16,12 +16,15 @@ import (
 // enters responses.
 type execRunner struct{}
 
-// cappedWriter is a size-bounded io.Writer: once the limit is crossed
-// it flags overflow and fails, which stops exec's internal copying.
+// cappedWriter is a size-bounded io.Writer: crossing the limit flags
+// overflow and IMMEDIATELY kills the child's process group (a command
+// that overruns must not keep running until the timeout), then fails
+// the write so exec's internal copying stops.
 type cappedWriter struct {
 	limit int
 	buf   bytes.Buffer
 	over  bool
+	kill  func() // wired after Start, once the process exists
 }
 
 func newCappedWriter(limit int) *cappedWriter {
@@ -31,6 +34,9 @@ func newCappedWriter(limit int) *cappedWriter {
 func (w *cappedWriter) Write(p []byte) (int, error) {
 	if w.buf.Len()+len(p) > w.limit {
 		w.over = true
+		if w.kill != nil {
+			w.kill()
+		}
 		return 0, errOutputCap
 	}
 	w.buf.Write(p)
@@ -59,6 +65,11 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	if err := cmd.Start(); err != nil {
 		return nil, ErrCommandUnavailable
 	}
+
+	// Wire the overflow kill now that the process exists: an overrun
+	// is terminated immediately, not left to run until the deadline.
+	out.kill = func() { killGroup(cmd.Process) }
+	errOut.kill = out.kill
 
 	// Deadline kill: fires even while Wait is blocked on descendants.
 	killer := time.AfterFunc(Timeout, func() { killGroup(cmd.Process) })
