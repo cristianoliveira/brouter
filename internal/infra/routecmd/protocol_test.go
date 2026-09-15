@@ -182,3 +182,62 @@ esac`))
 		t.Fatalf("host not normalized: %+v", res)
 	}
 }
+
+// Missing route key is NOT a defer: v1 requires an explicit target or
+// explicit null.
+func TestCommanderMissingRouteKeyRejected(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t, `printf '{"version":1}'`))
+	res, err := c.Decide(context.Background(), "https://example.com/x")
+	if !errors.Is(err, ErrInvalidResponse) {
+		t.Fatalf("missing route must be invalid response, got %v", err)
+	}
+	if res != (Result{}) {
+		t.Fatalf("no partial result: %+v", res)
+	}
+}
+
+// Non-string route values are invalid, not defers.
+func TestCommanderNonStringRouteRejected(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t, `printf '{"version":1,"route":42}'`))
+	if _, err := c.Decide(context.Background(), "https://example.com/x"); !errors.Is(err, ErrInvalidResponse) {
+		t.Fatalf("non-string route must be invalid response, got %v", err)
+	}
+}
+
+// URLs beyond the explicit request bound are rejected before spawn.
+func TestCommanderURLLengthBound(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, []string{filepath.Join(t.TempDir(), "never-spawned")})
+	long := "https://example.com/" + strings.Repeat("a", MaxURLLen)
+	if _, err := c.Decide(context.Background(), long); err == nil ||
+		!strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("over-long URL must be rejected with the explicit bound, got %v", err)
+	}
+}
+
+// A command that leaves a descendant holding the pipes still times out
+// instead of hanging: the whole process group is killed.
+func TestCommanderDescendantCannotHangTheTimeout(t *testing.T) {
+	mustScript(t)
+	c := newCommander(t, writeCommand(t, `sleep 1 & printf '{"version":1,"route":"slow"}'; sleep 30 &`))
+	done := make(chan struct{})
+	var res Result
+	var err error
+	go func() {
+		res, err = c.Decide(context.Background(), "https://example.com/x")
+		close(done)
+	}()
+	select {
+	case <-done:
+		if !errors.Is(err, ErrCommandTimeout) {
+			t.Fatalf("err = %v, want timeout", err)
+		}
+		if res != (Result{}) {
+			t.Fatalf("no partial result: %+v", res)
+		}
+	case <-time.After(Timeout + 5*time.Second):
+		t.Fatal("descendant-held pipes hung past the timeout")
+	}
+}

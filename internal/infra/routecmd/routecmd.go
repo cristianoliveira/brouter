@@ -34,6 +34,10 @@ const (
 	// OutputCap bounds stdout and stderr alike; a command exceeding it
 	// is killed and its decision rejected.
 	OutputCap = 4 << 10 // 4 KiB
+	// MaxURLLen bounds the URL accepted from the CLI (and therefore
+	// the request written to the command). Real-world URLs are far
+	// smaller; the cap keeps the protocol request bounded by design.
+	MaxURLLen = 8 << 10 // 8 KiB
 	// ProtocolVersion is the only accepted request/response version.
 	ProtocolVersion = 1
 )
@@ -91,9 +95,46 @@ type utcBlock struct {
 	Sec   int `json:"sec"`
 }
 
+// response is the decoded command decision. UnmarshalJSON enforces
+// the v1 shape exactly: both keys present, no extras, version 1, and
+// route either a string or an explicit JSON null (a MISSING route key
+// is invalid — it is not a defer).
 type response struct {
-	Version int     `json:"version"`
-	Route   *string `json:"route"`
+	Version int
+	Route   *string
+}
+
+func (r *response) UnmarshalJSON(data []byte) error {
+	var raws map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raws); err != nil {
+		return err
+	}
+	allowed := map[string]bool{"version": true, "route": true}
+	for k := range raws {
+		if !allowed[k] {
+			return fmt.Errorf("unknown key %q", k)
+		}
+	}
+	versionRaw, ok := raws["version"]
+	if !ok {
+		return errors.New("missing version")
+	}
+	if err := json.Unmarshal(versionRaw, &r.Version); err != nil {
+		return fmt.Errorf("version must be a number: %w", err)
+	}
+	routeRaw, ok := raws["route"]
+	if !ok {
+		return errors.New("missing route (v1 requires an explicit target or null)")
+	}
+	if string(routeRaw) == "null" {
+		return nil // r.Route stays nil = explicit defer
+	}
+	var target string
+	if err := json.Unmarshal(routeRaw, &target); err != nil {
+		return fmt.Errorf("route must be a string or null: %w", err)
+	}
+	r.Route = &target
+	return nil
 }
 
 // Result is one command decision: Defer is true only for an explicit
@@ -173,6 +214,9 @@ func (c *Commander) Decide(ctx context.Context, rawURL string) (Result, error) {
 // contractURL applies the URL acceptance rules shared with the static
 // router, before anything is spawned.
 func contractURL(rawURL string) (urlFields, error) {
+	if len(rawURL) > MaxURLLen {
+		return urlFields{}, fmt.Errorf("invalid url: exceeds the %d-byte limit", MaxURLLen)
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return urlFields{}, fmt.Errorf("invalid url: %w", err)
