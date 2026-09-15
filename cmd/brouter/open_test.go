@@ -221,8 +221,8 @@ func TestOpenRejectsMultipleURLArguments(t *testing.T) {
 // route_command happy path: the command answers with an exact target
 // ID and that target is launched even though no static rule matches.
 func TestOpenRouteCommandAnswersTarget(t *testing.T) {
-	// Given a route_command that answers {"version":1,"route":"fake"},
-	// when open runs, the fake browser receives the URL and no rule was
+	// Given a route_command that answers the single line fake, when
+	// open runs, the fake browser receives the URL and no rule was
 	// needed.
 	dir := t.TempDir()
 	browser, log := writeFakeBrowser(t, dir, 0)
