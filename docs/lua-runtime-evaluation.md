@@ -202,6 +202,28 @@ no candidate's design assumes a stable-file world.
 - Whether Lua is adopted at all — a declarative non-Turing-complete
   alternative remains a legitimate defer/decline option.
 
+## Threat-model checklist
+
+Status key per candidate: **measured** (exercised here), **proposed**
+(mechanism exists in the pinned artifact, unexercised), **unknown**
+(no evidence), **n/a** (not applicable to the isolation shape).
+
+| Threat | Requirement | 1 gopher | 2 C Lua | 3 golua | 4 WASM | 5 subprocess |
+|---|---|---|---|---|---|---|
+| Script reads/writes files, spawns processes, reads env | allowlist denies os/io/load/require; no host capability surface | measured ✓ | measured ✓ | unknown | proposed ✓ | proposed (OS-enforced) |
+| Runaway script starves CPU | hard per-invocation timeout | **measured ✗** | measured ✓ | unknown | proposed (context) | proposed (kill) |
+| Script exhausts memory (tables/strings) | bounded allocation | measured ✗ (no knob) | proposed (allocator cap; unprobed) | unknown | proposed (limiter) | proposed (rlimits; unprobed) |
+| Secrets leak via error strings into diagnostics | redaction sweep before any sink | unprobed | unprobed | unprobed | unprobed | unprobed |
+| Stale or half-written config/script is served after an edit | fresh immutable per-URL snapshot; unstable reads rejected | n/a (host obligation, engine-independent) — host-side, all candidates inherit it | | | | |
+| Malicious/typo'd target name silently routes | unknown-target fails closed, name unlogged | contract-level ✓ (all candidates inherit) | | | | |
+| Supply chain substitutes the engine or image | pinned artifact + hash, offline build | module pin ✓ | tarball sha256 ✓ | module pin ✓ | **unresolved image pin ✗** | nix-pinned runner ✓ |
+| Host escape (interpreter bug) | memory-safe VM or process boundary | pure Go (VM bugs possible, no memory unsafety) | C (memory-unsafe surface) | pure Go | Wasm sandbox | process boundary |
+| Engine/network access left on by mistake | no network API reachable | ✓ (stdlib stripped) | ✓ (socket lib never loaded) | unknown | ✓ (no host imports) | ✓ (no fds inherited — unprobed) |
+
+The checklist is acceptance material for whichever provider a later
+task selects: every unmeasured cell must become measured (or the
+threat must be redesign-excluded) before any runtime ships.
+
 ## Recommended next options (no default selected)
 
 - **Option A — defer**: keep static rules; revisit if real demand for
