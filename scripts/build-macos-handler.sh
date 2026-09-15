@@ -32,7 +32,10 @@ clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreService
 	-o "$app/Contents/MacOS/BrouterHandler" \
 	native/macos/main.m
 
-	echo "== assembling bundle metadata"
+	echo "== building isolated lua route helper ($target_arch)"
+bash "$(dirname "$0")/build-lua-helper.sh" "$app/Contents/MacOS/brouter-lua-helper"
+
+echo "== assembling bundle metadata"
 mkdir -p "$app/Contents/Resources"
 cp native/macos/Info.plist "$app/Contents/Info.plist"
 # User-selected menu icon (TASK-0026 candidate C): 1x/2x template

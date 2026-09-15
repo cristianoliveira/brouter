@@ -36,6 +36,37 @@ let
     # verifies compilation.
     doCheck = false;
   };
+  # Isolated route-script helper (TASK-0029): the vendored, pinned
+  # C Lua 5.4.7 sources compiled as a standalone process, so the Go
+  # router stays CGO-free. Capability libraries (os, io, package,
+  # debug) are excluded from the link; the helper opens only
+  # base/table/string.
+  luaExclude = [
+    "lua.c" "luac.c" "onelua.c" "linit.c" "loadlib.c" "liolib.c"
+    "loslib.c" "ldblib.c" "lmathlib.c" "lutf8lib.c"
+  ];
+  luaSrcDir = ../third-party/lua-5.4.7/src;
+  luaSources = map (name: luaSrcDir + "/" + name) (
+    builtins.filter (
+      name: lib.hasSuffix ".c" name && !(builtins.elem name luaExclude)
+    ) (builtins.attrNames (builtins.readDir luaSrcDir))
+  );
+  luaHelper = stdenv.mkDerivation {
+    pname = "brouter-lua-helper";
+    inherit version;
+    src = ../native/lua-helper;
+    dontConfigure = true;
+    buildPhase = ''
+      cc -O2 -I ${../third-party/lua-5.4.7/src} lua_helper.c ${
+        lib.concatStringsSep " " luaSources
+      } -lm -o brouter-lua-helper
+    '';
+    installPhase = "install -Dm755 brouter-lua-helper $out/bin/brouter-lua-helper";
+    meta = with lib; {
+      description = "Isolated C Lua route-script evaluator for brouter";
+      platforms = [ "aarch64-darwin" "x86_64-linux" "aarch64-linux" ];
+    };
+  };
 in
 if stdenv.hostPlatform.isDarwin then
   # One derivation holding regular files: a bundle whose Info.plist or
@@ -62,7 +93,9 @@ if stdenv.hostPlatform.isDarwin then
         -framework Foundation -framework CoreServices -framework AppKit \
         -o $app/Contents/MacOS/BrouterHandler main.m
       install -m755 ${brouter}/bin/brouter $app/Contents/MacOS/brouter
+      install -m755 ${luaHelper}/bin/brouter-lua-helper $app/Contents/MacOS/brouter-lua-helper
       install -m755 ${brouter}/bin/brouter $out/bin/brouter
+      install -m755 ${luaHelper}/bin/brouter-lua-helper $out/bin/brouter-lua-helper
     '';
     # The stdenv fixup phase strips binaries AFTER buildPhase, which
     # would invalidate any earlier signature; signing in postFixup is
@@ -83,7 +116,7 @@ if stdenv.hostPlatform.isDarwin then
 else
   symlinkJoin {
     name = "brouter-handler-${version}";
-    paths = [ brouter ];
+    paths = [ brouter luaHelper ];
 
     passthru.desktopEntryId = "brouter-handler.desktop";
 

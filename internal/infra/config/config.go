@@ -55,10 +55,19 @@ type ruleSpec struct {
 	Target  string `toml:"target"`
 }
 
+// luaSpec is the opt-in scripted routing section (TASK-0025/0029):
+// a single script file defining route(ctx). It carries no runtime
+// selection and no other knobs; the script is resolved relative to the
+// config file's directory when relative.
+type luaSpec struct {
+	Script string `toml:"script"`
+}
+
 type fileFormat struct {
 	Default  string                 `toml:"default"`
 	Browsers map[string]browserSpec `toml:"browsers"`
 	Rules    []ruleSpec             `toml:"rules"`
+	Lua      *luaSpec               `toml:"lua"`
 }
 
 // Config is the validated, domain-ready configuration.
@@ -66,6 +75,10 @@ type Config struct {
 	Default domain.Target
 	Targets map[string]TargetDefinition
 	Rules   []domain.Rule
+
+	// LuaScript is the absolute route-script path when the optional
+	// [lua] section is present, or empty when scripting is not enabled.
+	LuaScript string
 }
 
 // DefaultPath returns the one documented Unix user configuration
@@ -150,14 +163,56 @@ func validate(path string, file fileFormat) (*Config, error) {
 		Targets: make(map[string]TargetDefinition, len(file.Browsers)),
 	}
 
-	// Sorted names make aggregated diagnostics deterministic regardless of
-	// map iteration order.
+	errs = append(errs, validateBrowsers(path, file, cfg)...)
+	rules, ruleErrs := validateRules(path, file.Rules, cfg.Targets)
+	cfg.Rules = rules
+	errs = append(errs, ruleErrs...)
+
+	if err := validateLuaSection(file.Lua); err != nil {
+		errs = append(errs, err)
+	}
+
+	if file.Default != "" {
+		if _, ok := cfg.Targets[file.Default]; !ok {
+			errs = append(errs, fail("default", "target %q is not defined in browsers", file.Default))
+		}
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	// The route script is resolved against the config file's directory
+	// when relative, and re-read per URL by the bridge (never cached).
+	if file.Lua != nil {
+		script := file.Lua.Script
+		if !filepath.IsAbs(script) {
+			script = filepath.Join(filepath.Dir(path), script)
+		}
+		cfg.LuaScript = script
+	}
+	return cfg, nil
+}
+
+func validateLuaSection(spec *luaSpec) error {
+	if spec != nil && strings.TrimSpace(spec.Script) == "" {
+		return errors.New("lua.script: script must not be empty when [lua] is present")
+	}
+	return nil
+}
+
+// validateBrowsers validates every browser definition (sorted for
+// deterministic diagnostics) and populates cfg.Targets.
+func validateBrowsers(path string, file fileFormat, cfg *Config) []error {
+	fail := func(field string, format string, args ...any) error {
+		return fmt.Errorf("%s: %s: %s", path, field, fmt.Sprintf(format, args...))
+	}
+	var errs []error
 	names := make([]string, 0, len(file.Browsers))
 	for name := range file.Browsers {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-
 	for _, name := range names {
 		def, err := validateTarget(name, file.Browsers[name])
 		if err != nil {
@@ -166,19 +221,7 @@ func validate(path string, file fileFormat) (*Config, error) {
 		}
 		cfg.Targets[name] = def
 	}
-
-	rules, ruleErrs := validateRules(path, file.Rules, cfg.Targets)
-	cfg.Rules = rules
-	errs = append(errs, ruleErrs...)
-
-	if _, ok := cfg.Targets[file.Default]; !ok && strings.TrimSpace(file.Default) != "" {
-		errs = append(errs, fail("default", "target %q is not defined in browsers", file.Default))
-	}
-
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
-	}
-	return cfg, nil
+	return errs
 }
 
 func validateRules(path string, specs []ruleSpec, targets map[string]TargetDefinition) ([]domain.Rule, []error) {

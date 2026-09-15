@@ -1,0 +1,255 @@
+// Package luabridge implements the TASK-0029 first slice: an opt-in
+// route(ctx) evaluated by an isolated C Lua 5.4 helper process, with
+// per-URL immutable snapshots read on the Go side.
+//
+// Boundaries, per docs/route-script-contract.md:
+//   - The Go router stays CGO-free; Lua runs only in the helper child.
+//   - The script and config are re-read for every URL (no watchers, no
+//     caches): each request sees one immutable snapshot, and edited or
+//     broken files take effect on the next URL — visibly.
+//   - The helper receives no filesystem, network, process, or
+//     environment capability: only the framed request fields.
+package luabridge
+
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"net/url"
+	"os"
+	"os/exec"
+	"time"
+)
+
+// Result statuses.
+const (
+	StatusOK    = "ok"    // script returned a target string
+	StatusDefer = "nil"   // script deferred: static rules decide
+	StatusError = "error" // failure: Category carries the safe class
+)
+
+// Pair is one framed key/value field.
+type Pair struct {
+	Key   string
+	Value string
+}
+
+// Result is the classified outcome of one helper run.
+type Result struct {
+	Status   string
+	Target   string // set only when Status is StatusOK
+	Category string // set only when Status is StatusError
+}
+
+// Runner executes one framed helper request. Injectable for tests; the
+// production runner spawns the helper with a wall-clock budget.
+type Runner func(ctx context.Context, request []byte) ([]byte, error)
+
+// Provider evaluates route(ctx) through the helper process.
+type Provider struct {
+	HelperPath string // brouter-lua-helper binary
+	ScriptPath string // route script; re-read per URL
+	Clock      func() time.Time
+	Budget     time.Duration // wall-clock budget for the child process
+	Runner     Runner        // defaults to the exec-based runner
+}
+
+// NewProvider returns a provider with production defaults. The clock
+// and runner are replaceable for deterministic tests.
+func NewProvider(helperPath, scriptPath string) *Provider {
+	return &Provider{HelperPath: helperPath, ScriptPath: scriptPath, Clock: time.Now}
+}
+
+// ReadScript loads one immutable script snapshot. It is called once per
+// URL: os.ReadFile opens the file once, so an atomic-rename replacement
+// never affects an in-flight read, and a partially written file surfaces
+// here (or as a script-load-error in the helper) instead of being
+// served stale. Symlinked paths resolve naturally through the open.
+// There is deliberately no cache: the next URL re-reads the file.
+func ReadScript(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read route script: %w", err)
+	}
+	return data, nil
+}
+
+// Decide evaluates one URL: it takes a fresh script snapshot, injects
+// the contract fields, runs the helper, and classifies the outcome.
+//
+// Returned errors are visible configuration failures (unreadable
+// script, missing helper) and must stop the open. Returned Results
+// with StatusError are per-URL runtime failures: the caller falls back
+// to static rules and records the category.
+func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
+	script, err := ReadScript(p.ScriptPath)
+	if err != nil {
+		return Result{}, err
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return Result{}, fmt.Errorf("parse url: %w", err)
+	}
+	port := u.Port()
+
+	epoch := p.Clock().Unix()
+	pairs := []Pair{
+		{"script", string(script)},
+		{"epoch", fmt.Sprintf("%d", epoch)},
+		{"url.original", rawURL},
+		{"url.scheme", u.Scheme},
+		{"url.host", u.Hostname()},
+		{"url.port", port},
+		{"url.path", u.Path},
+		{"url.query", u.RawQuery},
+		{"url.fragment", u.Fragment},
+	}
+
+	budget := p.Budget
+	if budget <= 0 {
+		budget = 5 * time.Second
+	}
+	runCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	runner := p.Runner
+	if runner == nil {
+		runner = execRunner(p.HelperPath)
+	}
+	out, err := runner(runCtx, frameRequest(pairs))
+	if err != nil {
+		if ctxErr := runCtx.Err(); ctxErr == context.DeadlineExceeded {
+			// The wall-clock kill is the backstop behind the helper's
+			// instruction budget; the observable outcome is the same.
+			return Result{Status: StatusError, Category: "script-timeout"}, nil
+		}
+		return Result{}, fmt.Errorf("run helper: %w", err)
+	}
+
+	return parseResponse(out)
+}
+
+func execRunner(helperPath string) Runner {
+	return func(ctx context.Context, request []byte) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, helperPath)
+		cmd.Stdin = bytes.NewReader(request)
+		return cmd.Output()
+	}
+}
+
+// frameRequest encodes pairs as [uint32 LE count]{[uint32 LE klen][key]
+// [uint32 LE vlen][value]} — little-endian to match the helper's
+// native-endian writes on supported targets.
+func frameRequest(pairs []Pair) []byte {
+	size := 4
+	for _, p := range pairs {
+		size += 4 + len(p.Key) + 4 + len(p.Value)
+	}
+	buf := make([]byte, 0, size)
+	buf = binary.LittleEndian.AppendUint32(buf, uint32(len(pairs)))
+	for _, p := range pairs {
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(len(p.Key)))
+		buf = append(buf, p.Key...)
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(len(p.Value)))
+		buf = append(buf, p.Value...)
+	}
+	return buf
+}
+
+// parseResponse decodes the helper's framed response and maps it to a
+// Result. Unknown statuses and malformed frames are visible bridge
+// failures, never silently-treated fallbacks.
+func parseResponse(data []byte) (Result, error) {
+	fields, err := readFramedPairs(data)
+	if err != nil {
+		return Result{}, err
+	}
+
+	switch fields["status"] {
+	case StatusOK:
+		if _, ok := fields["target"]; !ok {
+			return Result{}, fmt.Errorf("helper returned ok without target")
+		}
+		return Result{Status: StatusOK, Target: fields["target"]}, nil
+	case StatusDefer:
+		return Result{Status: StatusDefer}, nil
+	case StatusError:
+		category := fields["category"]
+		if category == "" {
+			return Result{}, fmt.Errorf("helper returned error without category")
+		}
+		// Load-level failures mean the configured script itself is
+		// broken: they are visible configuration failures, not per-URL
+		// fallbacks — the contract's no-stale/no-silent rule.
+		if category == "script-load-error" || category == "missing-route-function" {
+			return Result{}, fmt.Errorf("script load failed (%s)", category)
+		}
+		return Result{Status: StatusError, Category: category}, nil
+	default:
+		return Result{}, fmt.Errorf("helper returned unknown status %q", fields["status"])
+	}
+}
+
+// readFramedPairs decodes the helper's pair framing into a map.
+func readFramedPairs(data []byte) (map[string]string, error) {
+	if len(data) < 4 {
+		return nil, fmt.Errorf("helper response too short")
+	}
+	count := int(binary.LittleEndian.Uint32(data))
+	if count == 0 || count > 16 {
+		return nil, fmt.Errorf("helper response has invalid pair count %d", count)
+	}
+	off := 4
+	fields := make(map[string]string, count)
+	for i := 0; i < count; i++ {
+		if off+4 > len(data) {
+			return nil, fmt.Errorf("helper response truncated in key length")
+		}
+		klen := int(binary.LittleEndian.Uint32(data[off : off+4]))
+		off += 4
+		if off+klen > len(data) {
+			return nil, fmt.Errorf("helper response truncated in key")
+		}
+		key := string(data[off : off+klen])
+		off += klen
+		if off+4 > len(data) {
+			return nil, fmt.Errorf("helper response truncated in value length")
+		}
+		vlen := int(binary.LittleEndian.Uint32(data[off : off+4]))
+		off += 4
+		if off+vlen > len(data) {
+			return nil, fmt.Errorf("helper response truncated in value")
+		}
+		fields[key] = string(data[off : off+vlen])
+		off += vlen
+	}
+	return fields, nil
+}
+
+func parseResponseStatus(fields map[string]string) (Result, error) {
+	switch fields["status"] {
+	case StatusOK:
+		if _, ok := fields["target"]; !ok {
+			return Result{}, fmt.Errorf("helper returned ok without target")
+		}
+		return Result{Status: StatusOK, Target: fields["target"]}, nil
+	case StatusDefer:
+		return Result{Status: StatusDefer}, nil
+	case StatusError:
+		category := fields["category"]
+		if category == "" {
+			return Result{}, fmt.Errorf("helper returned error without category")
+		}
+		// Load-level failures mean the configured script itself is
+		// broken: they are visible configuration failures, not per-URL
+		// fallbacks — the contract's no-stale/no-silent rule.
+		if category == "script-load-error" || category == "missing-route-function" {
+			return Result{}, fmt.Errorf("script load failed (%s)", category)
+		}
+		return Result{Status: StatusError, Category: category}, nil
+	default:
+		return Result{}, fmt.Errorf("helper returned unknown status %q", fields["status"])
+	}
+}

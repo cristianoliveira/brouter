@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -15,33 +16,34 @@ import (
 // one structured argument. There is no fallback to the system default
 // handler and no silent target switch: every failure is reported and
 // stops the open. Flag parsing lives in the Cobra command layer
-// (cli.go); args holds zero or one positional URL.
+// (cli.go); 	args holds zero or one positional URL.
+
+// errOpenExit signals that a phase helper has already reported the
+// failure on stderr and the open must stop with the failure code.
+var errOpenExit = errors.New("open: failure already reported")
+
 func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	rawURL, ok := singleInput("open", args, stdin, stderr)
 	if !ok {
 		return exitUsage
 	}
 
-	path, ok := resolveConfigPath(configPath, stderr)
-	if !ok {
-		return exitFailure
-	}
-	cfg, err := config.Load(path)
+	cfg, router, err := loadRouter(configPath, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
 		return exitFailure
 	}
 
-	router, err := domain.NewRouter(cfg.Rules, cfg.Default)
+	decision, handled, err := decideRoute(cfg, router, rawURL, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
+		fmt.Fprintf(stderr, "lua route: %v\n", err)
 		return exitFailure
 	}
-
-	decision, err := router.Evaluate(rawURL)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return exitFailure
+	if !handled {
+		decision, err = evaluateStatic(router, rawURL)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return exitFailure
+		}
 	}
 
 	target, ok := cfg.Targets[string(decision.Target)]
@@ -65,4 +67,25 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 
 	fmt.Fprintf(stdout, "launched: %s (%s)\n", decision.Target, plan.Detail)
 	return exitSuccess
+}
+
+// loadRouter resolves, loads, and validates the configuration, then
+// builds the domain router over it. Failures are reported on stderr;
+// errOpenExit signals the caller to exit with the failure code.
+func loadRouter(configPath string, stderr io.Writer) (*config.Config, *domain.Router, error) {
+	path, ok := resolveConfigPath(configPath, stderr)
+	if !ok {
+		return nil, nil, errOpenExit
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
+		return nil, nil, errOpenExit
+	}
+	router, err := domain.NewRouter(cfg.Rules, cfg.Default)
+	if err != nil {
+		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
+		return nil, nil, errOpenExit
+	}
+	return cfg, router, nil
 }
