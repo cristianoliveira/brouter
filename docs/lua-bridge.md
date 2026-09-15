@@ -51,6 +51,23 @@ The script is re-read for every URL — edits apply on the next open
 without restarting anything. There is no cache and no last-known-good
 fallback: a broken edit fails visibly until you fix it.
 
+## Pinned Lua source
+
+The helper compiles against the official Lua 5.4.7 release tarball
+(https://www.lua.org/ftp/lua-5.4.7.tar.gz, sha256
+9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30).
+The tree is not vendored:
+
+- Nix builds fetch and verify the pinned tarball hermetically
+  (fetchzip); after the first fetch they build offline.
+- Non-nix builds bootstrap once via `scripts/fetch-lua.sh`
+  (sha256-verified, cached in `.cache/lua-5.4.7/`); go test invokes it
+  automatically. An offline bootstrap without a cache fails with setup
+  guidance — nothing is downloaded implicitly.
+
+Isolation is unchanged: the same capability libraries are excluded
+from the link, and the Go router stays CGO-free.
+
 ## Isolation
 
 Each decision runs in a short-lived helper process (`brouter-lua-
