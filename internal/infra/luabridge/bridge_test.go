@@ -194,6 +194,55 @@ func TestProviderRejectsInvalidURLBeforeHelper(t *testing.T) {
 	}
 }
 
+// Contract-safe URL handling: empty hosts and malformed/unsupported
+// URLs are visible errors (mirroring the static router), and percent
+// escapes in path/query/fragment stay as written — no decoding.
+func TestProviderContractSafeURLHandling(t *testing.T) {
+	helper := buildHelper(t)
+
+	// Empty and dot-only hosts are invalid after normalization.
+	pEmpty := NewProvider(helper, writeScript(t, routeWrapper(fmt.Sprintf(`return "x"`))))
+	for _, bad := range []string{"https:///x", "https://./x", "https://..//x"} {
+		if _, err := pEmpty.Decide(context.Background(), bad); err == nil {
+			t.Errorf("empty-host URL %q must be rejected visibly", bad)
+		}
+	}
+
+	// Percent escapes survive as written; the helper script observes
+	// the escaped forms, never decoded separators.
+	scriptProbe := writeScript(t, routeWrapper(
+		fmt.Sprintf(`return ctx.url.path .. "|" .. ctx.url.query .. "|" .. ctx.url.fragment`)))
+	pEsc := NewProvider(helper, scriptProbe)
+	res, err := pEsc.Decide(context.Background(), "https://example.com/a%2Fb?c=%23d#e%2Ff")
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if res.Status != StatusOK {
+		t.Fatalf("status = %s (%s)", res.Status, res.Category)
+	}
+	want := "/a%2Fb|c=%23d|e%2Ff"
+	if res.Target != want {
+		t.Errorf("escaped fields = %q, want %q", res.Target, want)
+	}
+}
+
+// Credentials: URLs carrying userinfo never reach the script at all —
+// the provider defers to the static rules and records a redacted
+// category, so ctx and any diagnostic stay credential-free.
+func TestProviderSkipsScriptForUserinfoURLs(t *testing.T) {
+	// A helper path that does not exist proves the helper is never
+	// spawned for userinfo URLs.
+	p := NewProvider(filepath.Join(t.TempDir(), "helper-never-spawned"),
+		writeScript(t, routeWrapper(fmt.Sprintf(`return "x"`))))
+	res, err := p.Decide(context.Background(), "https://user:secret-token@example.com/x")
+	if err != nil {
+		t.Fatalf("userinfo URL must defer, not fail: %v", err)
+	}
+	if res.Status != StatusDefer || res.Category != "userinfo-present" {
+		t.Fatalf("userinfo URL = %+v, want defer with userinfo-present", res)
+	}
+}
+
 // ctx is read-only: writes to existing or new fields are denied, and
 // the metatable is hidden ("protected"), so the real table behind the
 // proxy is unreachable.

@@ -114,9 +114,20 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 
 	// Contract normalization, identical to the static router's host
 	// matching: scheme lowercased, host lowercased with one trailing
-	// dot stripped, no IDN conversion, userinfo never exposed.
+	// dot stripped, no IDN conversion. An empty host after
+	// normalization is invalid, exactly like the static router.
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return Result{}, fmt.Errorf("invalid url: empty host")
+	}
+
+	// Credentials present: the script is skipped entirely (ctx never
+	// sees them, and even ctx.url.original stays credential-free on
+	// the URLs it does see); the static rules decide instead.
+	if u.User != nil {
+		return Result{Status: StatusDefer, Category: "userinfo-present"}, nil
+	}
 	port := u.Port()
 
 	epoch := p.Clock().Unix()
@@ -127,9 +138,9 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 		{"url.scheme", scheme},
 		{"url.host", host},
 		{"url.port", port},
-		{"url.path", u.Path},
+		{"url.path", u.EscapedPath()},
 		{"url.query", u.RawQuery},
-		{"url.fragment", u.Fragment},
+		{"url.fragment", u.RawFragment},
 	}
 
 	budget := p.Budget
