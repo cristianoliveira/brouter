@@ -1,7 +1,7 @@
 ---
 id: TASK-0026
 title: Preview Brouter menu-bar icon variations
-status: doing
+status: done
 depends_on: []
 priority: normal
 tags: [macos, icon, preview]

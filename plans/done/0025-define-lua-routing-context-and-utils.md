@@ -1,7 +1,7 @@
 ---
 id: TASK-0025
 title: Define an explicit Lua routing context with allowlisted utilities
-status: todo
+status: done
 depends_on: []
 tags: [lua, design, config]
 ---
