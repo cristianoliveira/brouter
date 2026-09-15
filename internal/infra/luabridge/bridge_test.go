@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,6 +16,15 @@ import (
 // The helper binary is compiled from the vendored, pinned Lua 5.4.7
 // sources plus native/lua-helper/lua_helper.c. Skipping is honest:
 // without a C toolchain this evaluation cannot run here.
+var (
+	helperOnce   sync.Once
+	cachedHelper string
+	cachedErr    error
+)
+
+// buildHelper compiles the helper once per test binary and reuses the
+// cached binary for every test: vendored Lua compilation costs seconds
+// and would otherwise be paid by each test function.
 func buildHelper(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -23,32 +33,49 @@ func buildHelper(t *testing.T) string {
 	if _, err := exec.LookPath("clang"); err != nil {
 		t.Skip("clang unavailable")
 	}
-	helper := filepath.Join(t.TempDir(), "brouter-lua-helper")
-	src, luasrc, sources := helperInputs(t)
+	helperOnce.Do(func() {
+		cachedHelper, cachedErr = compileHelper()
+	})
+	if cachedErr != nil {
+		t.Fatalf("building helper failed: %v", cachedErr)
+	}
+	return cachedHelper
+}
+
+func compileHelper() (string, error) {
+	dir, err := os.MkdirTemp("", "brouter-lua-helper-")
+	if err != nil {
+		return "", err
+	}
+	helper := filepath.Join(dir, "brouter-lua-helper")
+	src, luasrc, sources, srcErr := helperInputs(dir)
+	if srcErr != nil {
+		return "", srcErr
+	}
 	args := append([]string{"-O2", "-I", luasrc, src}, sources...)
 	args = append(args, "-lm", "-o", helper)
 	cmd := exec.Command("clang", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("building helper failed: %v\n%s", err, out)
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("%v: %s", err, out)
 	}
-	return helper
+	return helper, nil
 }
 
 // helperInputs anchors paths at this source file (the repository root
 // is four levels up) and lists the vendored Lua sources that are safe
 // to link: capability libraries are excluded from the link entirely.
-func helperInputs(t *testing.T) (src, luasrc string, sources []string) {
-	t.Helper()
+func helperInputs(dir string) (src, luasrc string, sources []string, err error) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 	src = filepath.Join(root, "native", "lua-helper", "lua_helper.c")
 	luasrc = filepath.Join(root, "third-party", "lua-5.4.7", "src")
-	if _, err := os.Stat(src); err != nil {
-		t.Fatalf("helper source missing at %s: %v", src, err)
+	if _, serr := os.Stat(src); serr != nil {
+		return "", "", nil, fmt.Errorf("helper source missing at %s: %w", src, serr)
 	}
-	entries, err := os.ReadDir(luasrc)
-	if err != nil {
-		t.Fatalf("reading vendored lua dir: %v", err)
+	entries, rerr := os.ReadDir(luasrc)
+	if rerr != nil {
+		return "", "", nil, fmt.Errorf("reading vendored lua dir: %w", rerr)
 	}
 	exclude := map[string]bool{
 		"lua.c": true, "luac.c": true, "onelua.c": true, "linit.c": true,
@@ -61,9 +88,9 @@ func helperInputs(t *testing.T) (src, luasrc string, sources []string) {
 		}
 	}
 	if len(sources) == 0 {
-		t.Fatal("vendored lua dir has no linkable .c files")
+		return "", "", nil, fmt.Errorf("vendored lua dir has no linkable .c files")
 	}
-	return src, luasrc, sources
+	return src, luasrc, sources, nil
 }
 
 func evalWith(t *testing.T, helper, script string) Result {
