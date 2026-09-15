@@ -1,12 +1,25 @@
 # Raw evaluation outputs (collected verbatim, Apple Silicon macOS 26.6)
 
-All harness sources live next to this file. They carry
-`//go:build ignore` so the repository toolchain never compiles them;
-copy a source into a throwaway module with the pinned dependency to
-re-run. Every command below was
-run inside the pinned throwaway module (`.tmp/eval`, uncommitted).
+All harness sources live next to this file. They are reference inputs
+only and are excluded from the repository toolchain. From the repository
+root, reproduce the Go probes in a fresh throwaway module with:
 
-## gopher-lua v1.1.1 — `go test -v` (gopher_test.go)
+```
+rm -rf .tmp/eval && mkdir -p .tmp/eval
+cp docs/lua-runtime-evaluation-evidence/gopher_test.go .tmp/eval/
+cp docs/lua-runtime-evaluation-evidence/spawn_test.go .tmp/eval/
+cd .tmp/eval
+go mod init example.com/brouter-lua-eval
+go get github.com/yuin/gopher-lua@v1.1.1
+go test -tags ignore -v
+go test -tags ignore -run TestSubprocessSpawnLatency -v
+```
+
+The `ignore` tag includes the reference files without changing them. The
+recorded outputs were collected in that throwaway module; its setup is
+not committed.
+
+## gopher-lua v1.1.1 — `go test -tags ignore -v` (gopher_test.go)
 
 ```
 --- PASS: TestSandbox (0.00s)
@@ -26,8 +39,11 @@ Sandbox probes (TestSandbox body): `os`, `io`, `require`, `load`,
 
 Tarball: `lua-5.4.7.tar.gz`, sha256
 `9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30`.
-Build: `clang -arch arm64 -O2 -I lua-5.4.7/src lua54_harness.c.txt
-lua-5.4.7/src/liblua.a -lm -o lua54_harness`.
+The committed `.c.txt` reference is copied to a `.c` filename before
+compilation because clang otherwise treats `.txt` as linker input.
+Build: `cp lua54_harness.c.txt .tmp/eval/lua54_harness.c && clang
+-arch arm64 -O2 -I lua-5.4.7/src .tmp/eval/lua54_harness.c
+lua-5.4.7/src/liblua.a -lm -o .tmp/eval/lua54_harness`.
 
 ```
 sandbox-probe: ok
@@ -49,7 +65,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./... → OK
 
 Build evidence only; Linux execution was not available.
 
-## Subprocess baseline — `go test -run TestSubprocessSpawnLatency -v`
+## Subprocess baseline — `go test -tags ignore -run TestSubprocessSpawnLatency -v`
 
 ```
 spawn_test.go:19: subprocess spawn+exit: 9.05 ms/roundtrip (100 iterations)
@@ -57,4 +73,6 @@ spawn_test.go:19: subprocess spawn+exit: 9.05 ms/roundtrip (100 iterations)
 
 This is a raw `/usr/bin/true` fork/exec baseline — NOT a Lua runner
 measurement. FD inheritance and rlimit behavior of a real runner are
-unprobed (see the evaluation's unknowns).
+unprobed (see the evaluation's unknowns). The command is reproducible after the throwaway setup above; its
+setup was not run by repository CI and the result remains only a raw
+baseline, not runner evidence.

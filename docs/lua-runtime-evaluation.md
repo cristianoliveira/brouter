@@ -139,15 +139,15 @@ not available and is recorded as **unknown**, not as support.
 
 | Criterion | 1 gopher-lua | 2 C Lua 5.4 | 3 golua | 4 WASM/wazero | 5 subprocess |
 |---|---|---|---|---|---|
-| Allowlist stdlib | measured ✓ | measured ✓ | unknown | by construction ✓ | by construction ✓ |
-| No I/O/process/env | ✓ (stripped) | ✓ (never loaded) | unknown | ✓ (no imports) | ✓ (OS-enforced) |
-| Injected deterministic UTC | measured ✓ | measured ✓ | unverified | design ✓ | host feeds runner ✓ |
-| Hard timeout | **✗ measured gap** | **measured ✓** | unknown | proposed (context; unexercised) | proposed (kill; by construction) |
+| Allowlist stdlib | measured ✓ | measured ✓ | unknown | proposed (unexercised) | proposed (unexercised) |
+| No I/O/process/env | ✓ (stripped) | ✓ (never loaded) | unknown | proposed (no imports; unexercised) | unknown (child capability probe unrun) |
+| Injected deterministic UTC | measured ✓ | measured ✓ | unknown | proposed (unexercised) | proposed (host feeds runner; unexercised) |
+| Hard timeout | **✗ measured gap** | **measured ✓** | unknown | proposed (context; unexercised) | proposed (kill; unexercised) |
 | Memory limit | ✗ (no knob) | proposed (allocator cap/hook; unprobed) | unknown | proposed (limiter; unexercised) | proposed (rlimits/kill; unprobed) |
-| Error mapping | measured ✓ | measured ✓ | unknown | design ✓ | unprobed |
-| arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | presumed ✓ unverified | ✓ (wazero) | build-only evidence; run **unknown** |
+| Error mapping | measured ✓ | measured ✓ | unknown | proposed (unexercised) | unknown (unprobed) |
+| arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | build-only evidence; run **unknown** | unknown (Lua image unresolved; wazero not exercised) | build-only evidence; run **unknown** |
 | Maintenance | MIT, low churn, 1 maintainer | MIT, reference, ultra-stable | Apache-2.0, small project | MIT, active | n/a (self-owned) |
-| Offline reproducibility | module pin ✓ | tarball pin ✓ | module pin ✓ | **blob provenance unresolved** | nix-pinned runner ✓ |
+| Offline reproducibility | proposed (module pin; offline rerun unverified) | proposed (tarball hash; offline rerun unverified) | proposed (module pin; offline rerun unverified) | **blob provenance unresolved** | unknown (runner not pinned/built) |
 | Integration cost | low (if timeout solved) | high (cgo: CGO_ENABLED=0 conflicts, cross-builds, seal) | low | medium-high (glue + pin) | medium (second binary + JSON) |
 
 ## Live-edit requirement (added after PO confirmation)
@@ -210,15 +210,15 @@ Status key per candidate: **measured** (exercised here), **proposed**
 
 | Threat | Requirement | 1 gopher | 2 C Lua | 3 golua | 4 WASM | 5 subprocess |
 |---|---|---|---|---|---|---|
-| Script reads/writes files, spawns processes, reads env | allowlist denies os/io/load/require; no host capability surface | measured ✓ | measured ✓ | unknown | proposed ✓ | proposed (OS-enforced) |
+| Script reads/writes files, spawns processes, reads env | allowlist denies os/io/load/require; no host capability surface | measured ✓ | measured ✓ | unknown | proposed (unexercised) | unknown (child capability probe unrun) |
 | Runaway script starves CPU | hard per-invocation timeout | **measured ✗** | measured ✓ | unknown | proposed (context) | proposed (kill) |
 | Script exhausts memory (tables/strings) | bounded allocation | measured ✗ (no knob) | proposed (allocator cap; unprobed) | unknown | proposed (limiter) | proposed (rlimits; unprobed) |
 | Secrets leak via error strings into diagnostics | redaction sweep before any sink | unprobed | unprobed | unprobed | unprobed | unprobed |
 | Stale or half-written config/script is served after an edit | fresh immutable per-URL snapshot; unstable reads rejected | n/a (host obligation, engine-independent) — host-side, all candidates inherit it | | | | |
 | Malicious/typo'd target name silently routes | unknown-target fails closed, name unlogged | contract-level ✓ (all candidates inherit) | | | | |
-| Supply chain substitutes the engine or image | pinned artifact + hash, offline build | module pin ✓ | tarball sha256 ✓ | module pin ✓ | **unresolved image pin ✗** | nix-pinned runner ✓ |
+| Supply chain substitutes the engine or image | pinned artifact + hash, offline build | module pin (offline unverified) | tarball sha256 (offline unverified) | module pin (offline unverified) | **unresolved image pin ✗** | unknown (runner not pinned/built) |
 | Host escape (interpreter bug) | memory-safe VM or process boundary | pure Go (VM bugs possible, no memory unsafety) | C (memory-unsafe surface) | pure Go | Wasm sandbox | process boundary |
-| Engine/network access left on by mistake | no network API reachable | ✓ (stdlib stripped) | ✓ (socket lib never loaded) | unknown | ✓ (no host imports) | ✓ (no fds inherited — unprobed) |
+| Engine/network access left on by mistake | no network API reachable | ✓ (stdlib stripped) | ✓ (socket lib never loaded) | unknown | proposed (no host imports; unexercised) | unknown (FD inheritance unprobed) |
 
 The checklist is acceptance material for whichever provider a later
 task selects: every unmeasured cell must become measured (or the
@@ -256,11 +256,14 @@ Pinned artifacts and commands (temporary evaluation module in
   `docs/lua-runtime-evaluation-evidence/RESULTS.md`.
 - Harness sources committed for independent re-running:
   `docs/lua-runtime-evaluation-evidence/gopher_test.go`,
-  `lua54_harness.c`, `spawn_test.go`, `RESULTS.md` (verbatim raw
-  outputs).
+  `lua54_harness.c.txt`, `spawn_test.go`, `RESULTS.md` (verbatim raw
+  outputs). The Go sources require the `ignore` build tag in the
+  throwaway module; the C reference must be copied to a `.c` filename
+  before clang compilation. Setup is documented but not run by CI.
 - `go get github.com/arnodel/golua@v0.3.0` — Apache-2.0; probe
   abandoned (API drift) — unknown recorded.
 - `GOOS=linux GOARCH=arm64 go build ./...` and
   `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./...` — pure-Go
   cross-compile evidence.
-- Spawn latency harness `spawn_test.go` — 9.05 ms/roundtrip.
+- Spawn latency harness `spawn_test.go` — 9.05 ms/roundtrip; raw
+  baseline only, with reproduction setup described in RESULTS.md.
