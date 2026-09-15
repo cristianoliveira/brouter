@@ -1,44 +1,39 @@
 ---
 id: TASK-0029
-title: Implement the external routing command protocol
+title: Implement the external routing command line protocol
 status: doing
 depends_on: [TASK-0028]
 tags: [routing, command, security]
 ---
 
-# Implement the external routing command protocol
+# Implement the external routing command line protocol
 
 ## Problem
-Users want routing logic in any language they choose, without embedding or vendoring a language runtime. The runner is trusted local code, so the boundary must be explicit rather than pretending to sandbox it.
+Users want routing logic in any language they choose, without embedding a language runtime, JSON tool, or shell-specific convention. The configured runner is trusted local code, so the boundary must be explicit and honest.
 
 ## Outcome
-Brouter can invoke an opt-in executable plus argv directly for each URL and consume a small versioned JSON protocol. The Lua helper design is superseded for this product slice and must not be merged; its commits and QA remain historical evidence only.
+Brouter invokes an opt-in executable plus argv directly for each URL and exchanges a minimal line protocol. The earlier Lua and JSON protocols are superseded; preserve their history but do not merge or extend them.
 
-## Protocol
-Input is one bounded JSON object on stdin:
+## Protocol (v1)
 
-```json
-{"version":1,"url":{"original":"https://example.com/x?a=1#f","scheme":"https","host":"example.com","port":"","path":"/x","query":"a=1","fragment":"f"},"utils":{"epoch":1700000000,"utc":{"year":2023,"month":11,"day":14,"hour":22,"min":13,"sec":20}}}
-```
+**Input:** write the accepted URL's original bytes followed by exactly one LF to stdin, then close stdin. Do not JSON-encode, decode, normalize, or shell-escape the payload. Reject raw CR, LF, or other control bytes before spawning the command; preserve the original URL bytes for accepted inputs.
 
-Output is one bounded JSON object on stdout:
+**Output:** accept exactly one configured target ID with no newline, one terminal LF, or one terminal CRLF. The reserved literal `@default` means explicit defer to ordered TOML rules. Empty output, extra lines, embedded CR/LF, malformed bytes, or any other response is a visible failure. Cap stdout and stderr at 4 KiB.
 
-```json
-{"version":1,"route":"work-browser"}
-```
-
-`route` is either an exact configured target ID or `null` for explicit defer. No extra output, trailing data, stderr diagnostics, or protocol extensions are accepted in v1.
+When a route command is active, reject `@default` as a configured target ID so the reserved response cannot collide with a real target. No `jq` or other helper is required.
 
 ## Acceptance criteria
-- [ ] Replace Lua-specific runtime/build/dependency work with direct argv execution; never interpolate a command through a shell. Support Bash, Python, Lua, or any executable selected by the user through the same command array.
-- [ ] Bound stdin context and stdout/stderr capture, enforce a hard per-URL timeout, kill the child on timeout, and classify nonzero exit, timeout, malformed/trailing output, protocol/version errors, and unknown target with fixed redacted categories.
-- [ ] Validate returned target IDs against the current TOML snapshot. Only explicit `null` defers to ordered static rules; failures are visible and never silently fall back. Preserve byte-exact URL original only according to the resolved credential policy; do not leak secrets in errors or activity logs.
-- [ ] Load the current TOML for each URL with bounded observed-change detection. Keep selected config bytes immutable for the URL; document that independently saved files or a stationary syntactically valid partial write cannot be distinguished, and recommend atomic saves. No watcher or indefinite retry.
-- [ ] Keep the Go router free of language/runtime dependencies. Do not claim sandboxing: configured commands have the user’s host permissions and may read/write files, access network, launch processes, or mutate configuration.
-- [ ] Provide injectable clock, command runner, loader, decoder, and process/error seams for deterministic tests. Do not mutate defaults, LaunchServices, installed applications, or the real personal configuration.
+- [ ] Replace JSON/Lua-specific runtime work with direct argv execution; never interpolate a command through a shell. Support Bash, Python, Lua, or any executable selected by the user through the same command array.
+- [ ] Enforce a hard 2-second per-URL timeout and terminate the command process group/job, including descendants that inherit stdout/stderr. Bound stdout/stderr at 4 KiB and classify timeout, nonzero exit, output cap, malformed/extra-line output, unavailable command, and unknown target with fixed redacted categories.
+- [ ] Validate the single output line against the current TOML target IDs. Only exact `@default` defers; every other failure is visible and never silently falls back. Keep downstream browser outcome unknown.
+- [ ] Reject malformed URL input and raw CR/LF/control bytes before invoking the command. Preserve accepted URL bytes exactly on stdin. Preserve the settled userinfo policy: credentials cause a fixed redacted pre-command failure with no fallback.
+- [ ] Load current TOML for each URL with bounded observed-change detection. Keep selected config bytes immutable for the URL; document that bounded checks cannot detect every stationary syntactically valid partial write and recommend atomic saves. No watcher or indefinite retry.
+- [ ] Keep the Go router free of language/runtime dependencies. Do not claim sandboxing: configured commands have the user's host permissions and may read/write files, access network, launch processes, or mutate configuration.
+- [ ] Provide injectable clock only if the protocol needs it; v1 sends only the original URL, so do not invent a time/context payload. Provide injectable command runner, loader, decoder, and process/error seams for deterministic tests.
+- [ ] Do not mutate defaults, LaunchServices, installed applications, or the real personal configuration.
 
 ## Verification
-Add focused protocol, timeout/output-bound, target-validation, redaction, observed-config-change, URL-field, no-command, and static-compatibility tests. Run source/Nix package checks on available targets and label unavailable platform evidence.
+Add focused line-protocol, timeout/process-group, output-cap, target-validation, redaction, observed-config-change, control-byte, no-command, and static-compatibility tests. Run source/Nix package checks on available targets and label unavailable platform evidence.
 
 ## Non-goals
-Embedded Lua, runtime sandboxing, arbitrary shell strings, implicit migration, file watchers, silent fallback, browser/page-load claims, or live personal-config changes.
+Embedded Lua, JSON framing, jq, runtime sandboxing, arbitrary shell strings, implicit migration, file watchers, silent fallback, browser/page-load claims, or live personal-config changes.
