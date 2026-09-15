@@ -81,7 +81,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build ./... → OK
 
 Build evidence only; Linux execution was not available.
 
-## Subprocess baseline — `go test -tags ignore -run TestSubprocessSpawnLatency -v`
+## Subprocess baseline — `go test -run TestSubprocessSpawnLatency -v`
 
 ```
 spawn_test.go:19: subprocess spawn+exit: 9.05 ms/roundtrip (100 iterations)
