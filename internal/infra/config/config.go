@@ -4,6 +4,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -56,9 +57,16 @@ type ruleSpec struct {
 }
 
 type fileFormat struct {
-	Default  string                 `toml:"default"`
-	Browsers map[string]browserSpec `toml:"browsers"`
-	Rules    []ruleSpec             `toml:"rules"`
+	Default      string                 `toml:"default"`
+	Browsers     map[string]browserSpec `toml:"browsers"`
+	Rules        []ruleSpec             `toml:"rules"`
+	RouteCommand *routeCommandSpec      `toml:"route_command"`
+}
+
+// routeCommandSpec is the opt-in external routing command table. The
+// command is direct argv (executable first), never a shell string.
+type routeCommandSpec struct {
+	Command []string `toml:"command"`
 }
 
 // Config is the validated, domain-ready configuration.
@@ -66,6 +74,9 @@ type Config struct {
 	Default domain.Target
 	Targets map[string]TargetDefinition
 	Rules   []domain.Rule
+	// RouteCommand is the direct argv of the opt-in external routing
+	// command (nil when not configured). It is never a shell string.
+	RouteCommand []string
 }
 
 // DefaultPath returns the one documented Unix user configuration
@@ -108,10 +119,27 @@ func LoadDefault() (*Config, error) {
 // names the offending file, field, or rule; the file content is never
 // dumped and url-regex patterns are redacted from errors: patterns often
 // embed route secrets.
+// readConfigFile is the config source seam; tests replace it to
+// simulate unstable mid-read edits.
+var readConfigFile = os.ReadFile
+
+// Load reads and validates the configuration file at path. The file is
+// read twice: a disagreement between the two reads means a writer is
+// mid-edit and the load is rejected visibly, so a config observed
+// changing is never half-served. (Bounded checks cannot detect a
+// stationary syntactically-valid partial write; save configs
+// atomically — write-then-rename.)
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := readConfigFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	second, err := readConfigFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if !bytes.Equal(data, second) {
+		return nil, fmt.Errorf("%s: config changed while reading; retry", path)
 	}
 
 	var file fileFormat
@@ -134,6 +162,31 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// validateRouteCommand checks the route_command section's structure
+// only: the command is never resolved or executed (validate stays
+// side-effect free); resolvability is checked at first use. The
+// reserved @default target ID cannot be configured while a route
+// command is active: the line response would collide with an explicit
+// defer.
+func validateRouteCommand(path string, spec *routeCommandSpec, browsers map[string]browserSpec) []error {
+	if spec == nil {
+		return nil
+	}
+	var errs []error
+	if len(spec.Command) == 0 || strings.TrimSpace(spec.Command[0]) == "" {
+		errs = append(errs, fmt.Errorf("%s: route_command: command must be a non-empty argv array starting with the executable", path))
+	}
+	for i, a := range spec.Command {
+		if a == "" {
+			errs = append(errs, fmt.Errorf("%s: route_command: command argv[%d] is empty", path, i))
+		}
+	}
+	if _, collision := browsers["@default"]; collision {
+		errs = append(errs, fmt.Errorf("%s: route_command: \"@default\" is reserved for explicit defer and cannot be a browser ID while route_command is configured", path))
+	}
+	return errs
+}
+
 func validate(path string, file fileFormat) (*Config, error) {
 	fail := func(field string, format string, args ...any) error {
 		return fmt.Errorf("%s: %s: %s", path, field, fmt.Sprintf(format, args...))
@@ -145,9 +198,14 @@ func validate(path string, file fileFormat) (*Config, error) {
 		errs = append(errs, fail("default", "default target is required"))
 	}
 
+	errs = append(errs, validateRouteCommand(path, file.RouteCommand, file.Browsers)...)
+
 	cfg := &Config{
 		Default: domain.Target(file.Default),
 		Targets: make(map[string]TargetDefinition, len(file.Browsers)),
+	}
+	if file.RouteCommand != nil {
+		cfg.RouteCommand = file.RouteCommand.Command
 	}
 
 	// Sorted names make aggregated diagnostics deterministic regardless of

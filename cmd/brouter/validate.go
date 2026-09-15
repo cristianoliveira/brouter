@@ -23,6 +23,11 @@ func runValidate(configPath string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 
+	if cfg.RouteCommand != nil {
+		// Structure was validated by config.Load. The command is never
+		// resolved or executed by validate: side-effect-free by design.
+		fmt.Fprintf(stdout, "route_command: %q configured (not executed by validate)\n", cfg.RouteCommand[0])
+	}
 	fmt.Fprintf(stdout, "config OK: targets %d, rules %d, default %q\n",
 		len(cfg.Targets), len(cfg.Rules), cfg.Default)
 	return exitSuccess

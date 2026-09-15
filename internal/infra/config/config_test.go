@@ -444,3 +444,86 @@ profile = "Profile 1"
 		t.Error("ProfileSet = false, want true")
 	}
 }
+
+// route_command is validated structurally only: never resolved, never
+// executed. Empty argv, empty executable, or empty elements fail.
+func TestValidateRouteCommandStructureOnly(t *testing.T) {
+	cases := []struct {
+		name    string
+		section string
+		ok      bool
+		wantErr string
+	}{
+		{"absent section is fine", "", true, ""},
+		{"valid argv", "\n[route_command]\ncommand = [\"/bin/sh\", \"/p/r.sh\"]\n", true, ""},
+		{"empty argv", "\n[route_command]\ncommand = []\n", false, "non-empty argv array"},
+		{"empty executable", "\n[route_command]\ncommand = [\"\"]\n", false, "non-empty argv array"},
+		{"empty element", "\n[route_command]\ncommand = [\"/bin/sh\", \"\"]\n", false, "argv[1] is empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			content := "default = \"personal\"\n\n[browsers.personal]\nbrowser = \"brave\"\n" + tc.section
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			if tc.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.ok && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// The reserved @default line means explicit defer; while route_command
+// is active it cannot also be a configured browser ID.
+func TestValidateRouteCommandDefaultCollision(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `default = "app"
+
+[browsers.app]
+browser = "safari"
+
+[browsers.@default]
+browser = "chromium"
+
+[route_command]
+command = ["/bin/sh", "/p/r.sh"]
+`
+	// A raw "@default" table key needs quoting in TOML.
+	content = strings.Replace(content, "[browsers.@default]", "[browsers.\"@default\"]", 1)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "reserved for explicit defer") {
+		t.Fatalf("err = %v, want the @default collision error", err)
+	}
+}
+
+// A config rewritten mid-read is rejected visibly: the two snapshot
+// reads disagree, so Load fails instead of serving an observed-unstable
+// file. (Bounded checks cannot detect a stationary partial write.)
+func TestLoadRejectsObservedConfigChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("stable"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	original := readConfigFile
+	calls := 0
+	readConfigFile = func(string) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			return []byte("torn"), nil
+		}
+		return []byte("rewritten"), nil
+	}
+	defer func() { readConfigFile = original }()
+
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "changed while reading") {
+		t.Fatalf("observed change must be rejected visibly, got err=%v", err)
+	}
+}

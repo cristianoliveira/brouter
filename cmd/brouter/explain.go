@@ -13,8 +13,11 @@ import (
 // runExplain implements the body of `brouter explain URL`: it prints
 // the deterministic routing decision for one URL using the same domain
 // evaluation the open command uses. It never launches a browser and
-// never writes to disk. Flag parsing lives in the Cobra command layer
-// (cli.go); args holds zero or one positional URL.
+// never writes to disk. When a route_command is configured, explain
+// reports it WITHOUT executing it: commands may be impure or carry
+// side effects, so only real `open` traffic runs them. Flag parsing
+// lives in the Cobra command layer (cli.go); args holds zero or one
+// positional URL.
 func runExplain(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	rawURL, ok := singleInput("explain", args, stdin, stderr)
 	if !ok {
@@ -29,6 +32,10 @@ func runExplain(configPath string, args []string, stdin io.Reader, stdout, stder
 	if err != nil {
 		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
 		return exitFailure
+	}
+
+	if cfg.RouteCommand != nil {
+		fmt.Fprintf(stdout, "route_command: %q configured (not executed by explain)\n", cfg.RouteCommand[0])
 	}
 
 	router, err := domain.NewRouter(cfg.Rules, cfg.Default)
