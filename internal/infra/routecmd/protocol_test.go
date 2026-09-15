@@ -114,7 +114,7 @@ func TestCommanderFailureCategories(t *testing.T) {
 		{"extra lines", `printf 'a\nb\n'`, ErrInvalidResponse},
 		{"embedded newline", `printf 'a\nb'`, ErrInvalidResponse},
 		{"embedded carriage return", `printf 'a\rb'`, ErrInvalidResponse},
-		{"non-utf8 output", `printf '\xff\xfe'`, ErrInvalidResponse},
+		{"non-utf8 output", `printf '\200'`, ErrInvalidResponse},
 		{"output cap", `printf 'a%.0s' $(seq 1 9000)`, ErrCommandOutputCap},
 		{"timeout", `sleep 5`, ErrCommandTimeout},
 	}
