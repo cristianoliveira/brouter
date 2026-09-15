@@ -47,6 +47,8 @@ func TestDarwinFlakePackageShipsAppAndCLI(t *testing.T) {
 		"Contents/Info.plist",
 		"Contents/MacOS/BrouterHandler",
 		"Contents/MacOS/brouter",
+		"Contents/Resources/menu-icon.png",
+		"Contents/Resources/menu-icon@2x.png",
 	} {
 		assertBundleArtifact(t, app, artifact)
 	}

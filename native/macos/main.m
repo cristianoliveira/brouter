@@ -356,14 +356,24 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 	_statusItem = [[NSStatusBar systemStatusBar]
 		statusItemWithLength:NSVariableStatusItemLength];
 
-	// A system symbol renders as a template image: AppKit recolors it
-	// for light and dark menu bars automatically.
-	NSImage *icon = [NSImage imageWithSystemSymbolName:@"arrow.triangle.branch"
-		accessibilityDescription:@"Brouter"];
-	if (icon == nil) {
-		AppendLog(@"error: status item symbol unavailable; menu bar presence incomplete");
-	} else {
+	// User-selected menu icon (TASK-0026 preview candidate C): a
+	// lowercase-b monogram drawn as one continuous stroke ending in an
+	// upward arrowhead, shipped as 1x/2x bundle PNGs. Template
+	// monochrome: AppKit recolors it for light and dark menu bars.
+	NSImage *icon = [NSImage imageNamed:@"menu-icon"];
+	if (icon != nil) {
+		icon.template = YES;
+		icon.size = NSMakeSize(16, 16);
 		_statusItem.button.image = icon;
+	} else {
+		// Resilience: never leave the status item silent and empty.
+		AppendLog(@"error: menu icon asset missing; falling back to system symbol");
+		icon = [NSImage imageWithSystemSymbolName:@"arrow.triangle.branch"
+			accessibilityDescription:@"Brouter"];
+		if (icon != nil) {
+			icon.template = YES;
+			_statusItem.button.image = icon;
+		}
 	}
 	_statusItem.button.accessibilityLabel = @"Brouter";
 	_statusItem.button.toolTip = @"Brouter — running";
