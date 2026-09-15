@@ -202,7 +202,9 @@ no candidate's design assumes a stable-file world.
 - Whether Lua is adopted at all — a declarative non-Turing-complete
   alternative remains a legitimate defer/decline option.
 
-## Threat-model checklist
+## Threat model checklist
+
+*(Threat-model checklist — TASK-0028 acceptance material)*
 
 Status key per candidate: **measured** (exercised here), **proposed**
 (mechanism exists in the pinned artifact, unexercised), **unknown**
