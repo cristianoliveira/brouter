@@ -46,7 +46,7 @@ let
     "loslib.c" "ldblib.c" "lmathlib.c" "lutf8lib.c"
   ];
   luaSrcDir = ../third-party/lua-5.4.7/src;
-  luaSources = map (name: luaSrcDir + "/" + name) (
+  luaSources = map (name: luaSrcDir + ("/" + name)) (
     builtins.filter (
       name: lib.hasSuffix ".c" name && !(builtins.elem name luaExclude)
     ) (builtins.attrNames (builtins.readDir luaSrcDir))
