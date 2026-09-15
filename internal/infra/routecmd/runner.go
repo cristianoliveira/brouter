@@ -3,9 +3,11 @@ package routecmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -71,15 +73,31 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	out.kill = func() { killGroup(cmd.Process) }
 	errOut.kill = out.kill
 
-	// Deadline kill: fires even while Wait is blocked on descendants.
-	killer := time.AfterFunc(Timeout, func() { killGroup(cmd.Process) })
+	// Kill triggers: the deadline timer AND parent cancellation both
+	// kill the WHOLE process group immediately — CommandContext alone
+	// kills only the direct child, leaving descendants to hold the
+	// pipes and stall the decision past the caller's patience.
+	killOnce := sync.Once{}
+	killNow := func() { killOnce.Do(func() { killGroup(cmd.Process) }) }
+	killer := time.AfterFunc(Timeout, killNow)
 	defer killer.Stop()
+	ctxWatch := make(chan struct{})
+	defer close(ctxWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			killNow()
+		case <-ctxWatch:
+		}
+	}()
 
 	waitErr := cmd.Wait()
 
 	switch {
-	case ctx.Err() == context.DeadlineExceeded:
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return nil, ErrCommandTimeout
+	case errors.Is(ctx.Err(), context.Canceled):
+		return nil, ErrCommandCanceled
 	case out.over || errOut.over:
 		return nil, ErrCommandOutputCap
 	case waitErr != nil:

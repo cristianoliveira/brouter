@@ -240,3 +240,27 @@ func TestCommanderOutputCapKillsImmediately(t *testing.T) {
 		t.Fatalf("cap decision took %v — overflow must kill immediately, not wait for the deadline", elapsed)
 	}
 }
+
+// Parent cancellation kills the whole process group promptly — the
+// decision returns fast even when a descendant holds the pipes.
+func TestCommanderParentCancelKillsGroupPromptly(t *testing.T) {
+	mustScript(t)
+	// Direct child stays alive past the cancel (foreground sleep);
+	// a background descendant also holds stdout.
+	c := newCommander(t, writeCommand(t, `sleep 30 & sleep 30`))
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := c.Decide(ctx, "https://example.com/x")
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, ErrCommandCanceled) {
+		t.Fatalf("err = %v, want command-canceled", err)
+	}
+	if elapsed >= time.Second {
+		t.Fatalf("cancellation took %v — descendants were not killed promptly", elapsed)
+	}
+}

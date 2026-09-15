@@ -52,8 +52,11 @@ var (
 	ErrCommandTimeout      = errors.New("route_command: command timed out")
 	ErrCommandOutputCap    = errors.New("route_command: command output exceeded the size limit")
 	ErrInvalidResponse     = errors.New("route_command: invalid response")
+	ErrCommandCanceled     = errors.New("route_command: canceled")
 	ErrUserinfoUnsupported = errors.New(
-		"invalid url: userinfo credentials are not supported for scripted routing")
+		"invalid url: userinfo credentials are not supported for external command routing")
+	// ErrCommandCanceled reports caller-initiated cancellation (fixed
+	// redacted text; the parent's cancel reason is not echoed).
 )
 
 // Result is one command decision: Defer is true only for an exact
