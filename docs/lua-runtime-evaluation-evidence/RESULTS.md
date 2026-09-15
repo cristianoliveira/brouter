@@ -11,7 +11,7 @@ cp docs/lua-runtime-evaluation-evidence/spawn_test.go .tmp/eval/
 cd .tmp/eval
 go mod init example.com/brouter-lua-eval
 go get github.com/yuin/gopher-lua@v1.1.1
-go test -tags ignore -v
+go test -tags ignore -run 'Test(Sandbox|Timeout|ErrorMapping)$' -v
 go test -tags ignore -run TestSubprocessSpawnLatency -v
 ```
 
@@ -19,7 +19,7 @@ The `ignore` tag includes the reference files without changing them. The
 recorded outputs were collected in that throwaway module; its setup is
 not committed.
 
-## gopher-lua v1.1.1 — `go test -tags ignore -v` (gopher_test.go)
+## gopher-lua v1.1.1 — `go test -tags ignore -run 'Test(Sandbox|Timeout|ErrorMapping)$' -v` (gopher_test.go)
 
 ```
 --- PASS: TestSandbox (0.00s)

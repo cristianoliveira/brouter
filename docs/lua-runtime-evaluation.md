@@ -144,7 +144,7 @@ not available and is recorded as **unknown**, not as support.
 | Injected deterministic UTC | measured ✓ | measured ✓ | unknown | proposed (unexercised) | proposed (host feeds runner; unexercised) |
 | Hard timeout | **✗ measured gap** | **measured ✓** | unknown | proposed (context; unexercised) | proposed (kill; unexercised) |
 | Memory limit | ✗ (no knob) | proposed (allocator cap/hook; unprobed) | unknown | proposed (limiter; unexercised) | proposed (rlimits/kill; unprobed) |
-| Error mapping | measured ✓ | measured ✓ | unknown | proposed (unexercised) | unknown (unprobed) |
+| Error mapping | measured (raw only; redaction unprobed) | measured (raw only; redaction unprobed) | unknown | proposed (unexercised) | unknown (unprobed) |
 | arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | build-only evidence; run **unknown** | unknown (Lua image unresolved; wazero not exercised) | build-only evidence; run **unknown** |
 | Maintenance | MIT, low churn, 1 maintainer | MIT, reference, ultra-stable | Apache-2.0, small project | MIT, active | n/a (self-owned) |
 | Offline reproducibility | proposed (module pin; offline rerun unverified) | proposed (tarball hash; offline rerun unverified) | proposed (module pin; offline rerun unverified) | **blob provenance unresolved** | unknown (runner not pinned/built) |
