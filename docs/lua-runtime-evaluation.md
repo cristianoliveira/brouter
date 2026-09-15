@@ -21,7 +21,7 @@ offline reproducibility.
 | 1 | gopher-lua | pure-Go Lua 5.1 VM, in-process | `github.com/yuin/gopher-lua v1.1.1`, MIT |
 | 2 | C Lua 5.4 via cgo | upstream interpreter, in-process | `lua-5.4.7` (lua.org sha256 `9fbf5e28…0bf1e30`), MIT |
 | 3 | arnodel/golua | pure-Go Lua 5.4 VM, in-process | `github.com/arnodel/golua v0.3.0`, Apache-2.0 |
-| 4 | WASM Lua via wazero | WebAssembly sandbox, in-process | wazero (MIT); **Lua image pin unresolved** |
+| 4 | WASM Lua via wazero | WebAssembly sandbox, in-process | wazero v1.12.0 (MIT); **Lua image pin unresolved** |
 | 5 | subprocess runner | OS process boundary per call | any pinned engine; no in-process dependency |
 
 ## Measured evidence
@@ -65,8 +65,12 @@ not available and is recorded as **unknown**, not as support.
   "script-timeout (instruction budget exceeded)"; the whole harness
   (compile + run + teardown) took **0.365 s wall**.
 - Memory: enforceable via a custom `lua_Alloc` allocator cap or
-  GC-step checks inside the same hook (not yet prototyped — the
-  *mechanism* exists in the C API; the cap policy is an open choice).
+  GC-step checks inside the same hook — **mechanism unprobed** in this
+  evaluation (no cap was built or measured); the cap policy is an open
+  choice.
+- Error redaction: the harness surfaces raw error strings; whether a
+  production binding must sanitize script-authored text before it
+  reaches diagnostics was **not probed** — recorded as unknown.
 - Builds: compiles arm64 on macOS (`make generic`). Linux/arm64 build
   and cgo integration into this repo's packaging (which today assumes
   `CGO_ENABLED=0`-friendly pure Go) are **unknown — not exercised**;
@@ -91,8 +95,11 @@ not available and is recorded as **unknown**, not as support.
 
 - In principle the strongest isolation: the script runs in a WebAssembly
   sandbox with no host imports unless explicitly exposed; wazero is
-  pure Go (MIT, actively maintained) and supports context deadlines and
-  memory limits — the contract's timeout/memory map natively.
+  pure Go (MIT, actively maintained; probe pinned against v1.12.0,
+  the latest release tag at evaluation time) and supports context
+  deadlines and memory limits — the contract's timeout/memory map
+  natively. wazero itself was NOT exercised end-to-end here because
+  the Lua image pin is the missing piece.
 - **Unresolved pin: no provenance-clean, nix-pinnable Lua-to-WASM
   image was identified within the evaluation budget.** The known
   builds live in third-party registries with supply-chain provenance
@@ -108,9 +115,15 @@ not available and is recorded as **unknown**, not as support.
   pipes, wall-clock kill, separate address space), and the Go binary
   stays pure-Go. Marshaling is a small JSON document both ways.
 - Measured spawn+exit cost on this host: **9.05 ms/roundtrip** under
-  test-load conditions (100 iterations of `/usr/bin/true`); even an
-  order of magnitude above the raw fork cost is acceptable at brouter's
-  per-URL launch volumes.
+  test-load conditions (100 iterations of `/usr/bin/true`). This is a
+  **raw fork/exec baseline only — not a Lua runner measurement**; a
+  real runner adds engine init, JSON marshal/unmarshal, and teardown.
+- FD inheritance and rlimit behavior of an actual runner are
+  **unprobed** (close-on-exec policy, limit availability on Linux vs
+  macOS) — unknown.
+- arm64/Linux: inferred from Go's cross-platform process spawning plus
+  `GOOS=linux` build evidence of the harness (build-only, no Linux
+  execution) — recorded as build-evidence, not run-evidence.
 - Costs: a second shipped binary (nix can pin it), JSON contract
   maintenance, and per-call latency. Timeout is enforcement-by-kill —
   the strongest guarantee of all candidates.
@@ -123,9 +136,9 @@ not available and is recorded as **unknown**, not as support.
 | No I/O/process/env | ✓ (stripped) | ✓ (never loaded) | unknown | ✓ (no imports) | ✓ (OS-enforced) |
 | Injected deterministic UTC | measured ✓ | measured ✓ | unverified | design ✓ | host feeds runner ✓ |
 | Hard timeout | **✗ native gap** | **measured ✓** | unknown | ✓ (context) | ✓ (kill) |
-| Memory limit | ✗ (no knob) | mechanism ✓ (policy open) | unknown | ✓ (limiter) | ✓ (rlimits/kill) |
-| Error mapping | measured ✓ | measured ✓ | unknown | design ✓ | via JSON ✓ |
-| arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | presumed ✓ unverified | ✓ (wazero) | ✓ |
+| Memory limit | ✗ (no knob) | unprobed (mechanism exists) | unknown | ✓ (limiter) | unprobed (rlimits/kill) |
+| Error mapping | measured ✓ | measured ✓ | unknown | design ✓ | unprobed |
+| arm64/Linux | ✓ measured compile | macOS measured; Linux **unknown** | presumed ✓ unverified | ✓ (wazero) | build-only evidence; run **unknown** |
 | Maintenance | MIT, low churn, 1 maintainer | MIT, reference, ultra-stable | Apache-2.0, small project | MIT, active | n/a (self-owned) |
 | Offline reproducibility | module pin ✓ | tarball pin ✓ | module pin ✓ | **blob provenance unresolved** | nix-pinned runner ✓ |
 | Integration cost | low (if timeout solved) | high (cgo: CGO_ENABLED=0 conflicts, cross-builds, seal) | low | medium-high (glue + pin) | medium (second binary + JSON) |
@@ -151,7 +164,12 @@ events must invalidate it on every edit and treat mid-event changes as
 out of scope. Edited-but-broken scripts/configs must fail visibly per
 the contract's error categories — no stale-cache serving and no
 last-known-good fallback unless a future policy explicitly adds one
-(covered by TASK-0029/30/31 snapshot/coherence plans).
+(covered by TASK-0029/30/31 snapshot/coherence plans). The snapshot
+read itself must be robust to real editor behavior — atomic-rename
+writes, symlinked config paths, and files rewritten mid-read — and any
+coherence scheme must define which side of an unstable read wins;
+those mechanics are TASK-0029/0030 acceptance material, listed here so
+no candidate's design assumes a stable-file world.
 
 ## Hard safety requirements identified
 
@@ -202,9 +220,15 @@ Pinned artifacts and commands (temporary evaluation module in
 - `go get github.com/yuin/gopher-lua@v1.1.1` — MIT (LICENSE quoted in
   module cache). Tests `TestSandbox`, `TestTimeout`, `TestErrorMapping`
   in `gopher_test.go`.
-- `curl https://www.lua.org/ftp/lua-5.4.7.tar.gz` (sha256
-  `9fbf5e28…`), `make generic`, harness `lua54_harness.c` with
-  `-arch arm64`; raw output quoted above under "Measured evidence".
+- `curl https://www.lua.org/ftp/lua-5.4.7.tar.gz` — full sha256
+  `9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30`;
+  `make generic`, harness `lua54_harness.c` with `-arch arm64`; raw
+  output quoted in
+  `docs/lua-runtime-evaluation-evidence/RESULTS.md`.
+- Harness sources committed for independent re-running:
+  `docs/lua-runtime-evaluation-evidence/gopher_test.go`,
+  `lua54_harness.c`, `spawn_test.go`, `RESULTS.md` (verbatim raw
+  outputs).
 - `go get github.com/arnodel/golua@v0.3.0` — Apache-2.0; probe
   abandoned (API drift) — unknown recorded.
 - `GOOS=linux GOARCH=arm64 go build ./...` and
