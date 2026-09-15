@@ -1,7 +1,7 @@
 ---
 id: TASK-0028
 title: Evaluate Lua runtime and isolation options
-status: todo
+status: done
 depends_on: [TASK-0025]
 priority: normal
 tags: [lua, design, security]
