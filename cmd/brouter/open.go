@@ -45,7 +45,7 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 	// rules; every command failure is visible and stops the open —
 	// never a silent fallback.
 	if cfg.RouteCommand != nil {
-		res, decided, cerr := decideByCommand(cfg, rawURL, stderr)
+		res, decided, cerr := decideByCommand(cfg, path, rawURL, stderr)
 		if cerr != nil {
 			return exitFailure
 		}
@@ -105,8 +105,8 @@ func launchTarget(def config.TargetDefinition, name, rawURL string, stderr, stdo
 // true when the command answered with a final target; a null decision
 // defers (decided=false, err=nil); any error is terminal and already
 // reported on stderr.
-func decideByCommand(cfg *config.Config, rawURL string, stderr io.Writer) (routecmd.Result, bool, error) {
-	commander := &routecmd.Commander{Command: cfg.RouteCommand}
+func decideByCommand(cfg *config.Config, configPath, rawURL string, stderr io.Writer) (routecmd.Result, bool, error) {
+	commander := &routecmd.Commander{Command: cfg.RouteCommand, ConfigPath: configPath}
 	res, err := commander.Decide(context.Background(), rawURL)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
