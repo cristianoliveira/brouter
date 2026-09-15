@@ -85,14 +85,12 @@ func TestResolveCommandDoesNotMutateInput(t *testing.T) {
 	}
 }
 
-func TestCommanderExecutesRelativeScriptBesideSymlinkedConfig(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink permissions vary on Windows")
-	}
+// writeSymlinkedScriptFixture builds a config.toml symlink and a
+// colocated route.py symlink whose targets live in a separate
+// directory, then moves the process into another working directory.
+func writeSymlinkedScriptFixture(t *testing.T) string {
+	t.Helper()
 
-	// Given a config symlink and a colocated route.py symlink, when the
-	// process starts from another directory, the relative executable is
-	// found beside the logical config and receives untouched arguments.
 	root := t.TempDir()
 	logicalDir := filepath.Join(root, "config")
 	targetDir := filepath.Join(root, "dotfiles")
@@ -130,6 +128,18 @@ func TestCommanderExecutesRelativeScriptBesideSymlinkedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(workingDir) })
+	return configPath
+}
+
+func TestCommanderExecutesRelativeScriptBesideSymlinkedConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions vary on Windows")
+	}
+
+	// Given a config symlink and a colocated route.py symlink, when the
+	// process starts from another directory, the relative executable is
+	// found beside the logical config and receives untouched arguments.
+	configPath := writeSymlinkedScriptFixture(t)
 
 	commander := &Commander{
 		Command:    []string{"./route.py", "--flag with spaces", "value"},
