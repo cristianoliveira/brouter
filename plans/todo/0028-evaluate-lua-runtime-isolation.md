@@ -16,7 +16,7 @@ The approved routing contract defines script inputs and safe outcomes, but selec
 A bounded, engine-agnostic comparison identifies whether and how the TASK-0025 contract can be implemented safely; it does not silently select a runtime.
 
 ## Acceptance criteria
-- [ ] Compare a small candidate set against the contract: standard-library allowlist, filesystem/network/process isolation, deterministic time injection, timeout enforcement, memory limits, error mapping, arm64/Linux builds, maintenance, licensing, offline reproducibility, and live edits without router restart.
+- [ ] Compare a small candidate set against the contract: standard-library allowlist, filesystem/network/process isolation, deterministic time injection, timeout enforcement, memory limits, error mapping, arm64/Linux builds, maintenance, licensing, offline reproducibility, and live edits: TOML and future Lua edits must apply without router restart, with per-URL fresh immutable snapshots and visible failures (no last-known-good fallback).
 - [ ] Use temporary/pinned evaluation or source inspection only; do not add a dependency, change `go.mod`, execute user scripts, or expose host capabilities.
 - [ ] Identify hard safety requirements and unresolved product choices, including timeout mechanism, whether a separate process is required, and how each new URL obtains a fresh immutable config-plus-script snapshot.
 - [ ] Recommend explicit next options (including defer/decline) with risks and evidence; document that no runtime/config schema/whole-Lua mode is approved by this task.

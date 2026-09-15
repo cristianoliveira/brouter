@@ -17,6 +17,12 @@ test "$timeout_rc" -eq 1
 go test -run TestSubprocessSpawnLatency -v
 ```
 
+Equivalent one-line variants (identical effect): the Go probes run
+with `go test -v -tags ignore` in a module with the pinned dependency
+and the sources left unstripped; the C probe compiles directly from
+the committed name with `clang -arch arm64 -O2 -x c -I lua-5.4.7/src
+lua54_harness.c.txt lua-5.4.7/src/liblua.a -lm -o lua54_harness`.
+
 The `sed` copies remove only the reference build constraint in the
 throwaway module; ordinary `go test` then runs only these copied files.
 `TestTimeout` is expected to exit 1 because the candidate lacks a hard
