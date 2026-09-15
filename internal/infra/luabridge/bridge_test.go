@@ -233,20 +233,26 @@ func TestProviderContractSafeURLHandling(t *testing.T) {
 	}
 }
 
-// Credentials: URLs carrying userinfo never reach the script at all —
-// the provider defers to the static rules and records a redacted
-// category, so ctx and any diagnostic stay credential-free.
-func TestProviderSkipsScriptForUserinfoURLs(t *testing.T) {
+// Credentials: URLs carrying userinfo are rejected visibly with fixed
+// redacted text before the script is read or the helper spawns — no
+// silent fallback, no credential ever echoed.
+func TestProviderRejectsUserinfoURLsVisibly(t *testing.T) {
 	// A helper path that does not exist proves the helper is never
 	// spawned for userinfo URLs.
 	p := NewProvider(filepath.Join(t.TempDir(), "helper-never-spawned"),
 		writeScript(t, routeWrapper(fmt.Sprintf(`return "x"`))))
 	res, err := p.Decide(context.Background(), "https://user:secret-token@example.com/x")
-	if err != nil {
-		t.Fatalf("userinfo URL must defer, not fail: %v", err)
+	if err == nil {
+		t.Fatal("userinfo URL must be rejected visibly")
 	}
-	if res.Status != StatusDefer || res.Category != "userinfo-present" {
-		t.Fatalf("userinfo URL = %+v, want defer with userinfo-present", res)
+	if !strings.Contains(err.Error(), "userinfo credentials are not supported") {
+		t.Errorf("error must be the fixed redacted message, got %q", err)
+	}
+	if strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), "example.com") {
+		t.Errorf("error must not echo the URL or credentials: %q", err)
+	}
+	if res != (Result{}) {
+		t.Errorf("no partial result may be returned: %+v", res)
 	}
 }
 

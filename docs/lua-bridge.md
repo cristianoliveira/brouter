@@ -56,7 +56,7 @@ fallback: a broken edit fails visibly until you fix it.
 The helper compiles against the official Lua 5.4.7 release tarball
 (https://www.lua.org/ftp/lua-5.4.7.tar.gz, sha256
 9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30).
-The tree is not vendored:
+The tree is not carried in the repository:
 
 - Nix builds fetch and verify the pinned tarball hermetically
   (fetchzip); after the first fetch they build offline.
@@ -71,7 +71,8 @@ from the link, and the Go router stays CGO-free.
 ## Isolation
 
 Each decision runs in a short-lived helper process (`brouter-lua-
-helper`, vendored Lua 5.4.7, MIT — see `third-party/lua-5.4.7`), so
+helper`, built from pinned Lua 5.4.7 sources — see "Pinned Lua
+source" above), so
 runaway scripts are killed by an instruction budget and a wall-clock
 backstop, and the Go router stays CGO-free. Diagnostics record only
 safe categories, never URLs or script text. Quitting browsers or

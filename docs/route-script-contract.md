@@ -70,7 +70,7 @@ end
 | `path`     | as written, no percent-decoding, empty string when absent      |
 | `query`    | as written without the `?`, empty string when absent           |
 | `fragment` | as written without the `#`, empty string when absent           |
-| `userinfo` | **not exposed** — credentials never reach scripts              |
+| `userinfo` | **rejected visibly** — URLs carrying credentials are refused before the script runs (fixed redacted message); credentials never reach scripts |
 
 No field is percent-decoded or otherwise normalized beyond the table
 above; `ctx.url.original` is always available for byte-exact matching.

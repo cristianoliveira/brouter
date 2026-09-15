@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -94,6 +95,11 @@ func ReadScript(path string) ([]byte, error) {
 // script, missing helper) and must stop the open. Returned Results
 // with StatusError are per-URL runtime failures: the caller falls back
 // to static rules and records the category.
+// errUserinfoUnsupported is fixed text: it never echoes the URL or
+// its credentials.
+var errUserinfoUnsupported = errors.New(
+	"invalid url: userinfo credentials are not supported for scripted routing")
+
 // parseContractURL applies the contract's URL acceptance rules before
 // anything else: the URL must be well-formed http(s) with a non-empty
 // normalized host — identical to the static router's rejection.
@@ -123,11 +129,12 @@ func (p *Provider) Decide(ctx context.Context, rawURL string) (Result, error) {
 		return Result{}, err
 	}
 
-	// Credentials present: the script is skipped entirely (ctx never
-	// sees them, and even ctx.url.original stays credential-free on
-	// the URLs it does see); the static rules decide instead.
+	// Credentials present: scripted routing is rejected visibly with
+	// a fixed, redacted message before the script is read or the
+	// helper spawns. No fallback that would silently change routing
+	// semantics for the affected URL; no credential ever leaves Go.
 	if u.User != nil {
-		return Result{Status: StatusDefer, Category: "userinfo-present"}, nil
+		return Result{}, errUserinfoUnsupported
 	}
 
 	script, err := ReadScript(p.ScriptPath)
