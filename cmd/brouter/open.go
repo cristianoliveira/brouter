@@ -41,7 +41,7 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 	}
 
 	// Opt-in external routing command: command-first, per plan
-	// TASK-0029. Only an explicit route:null defers to the static
+	// TASK-0029. Only the exact @default line defers to the static
 	// rules; every command failure is visible and stops the open —
 	// never a silent fallback.
 	if cfg.RouteCommand != nil {
@@ -52,7 +52,7 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 		if decided {
 			return launchCommandTarget(cfg, res, rawURL, stderr, stdout)
 		}
-		// route:null — fall through to the static router.
+		// @default — fall through to the static router.
 	}
 
 	decision, err := router.Evaluate(rawURL)
