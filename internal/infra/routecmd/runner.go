@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -59,19 +60,23 @@ func (execRunner) Run(ctx context.Context, argv []string, stdin []byte) (stdout 
 	cmd.SysProcAttr = groupAttr()
 	cmd.Stdin = bytes.NewReader(stdin)
 
+	// The overflow kill is wired BEFORE Start with a nil-process
+	// guard: the writer's Write can race the Start that fills
+	// cmd.Process, so the process pointer crosses an atomic and the
+	// callback no-ops until it is published. Without this, an
+	// instantly-overflowing command would race the assignment.
+	var proc atomic.Pointer[os.Process]
 	out := newCappedWriter(OutputCap)
 	errOut := newCappedWriter(OutputCap)
+	out.kill = func() { killGroup(proc.Load()) }
+	errOut.kill = out.kill
 	cmd.Stdout = out
 	cmd.Stderr = errOut
 
 	if err := cmd.Start(); err != nil {
 		return nil, ErrCommandUnavailable
 	}
-
-	// Wire the overflow kill now that the process exists: an overrun
-	// is terminated immediately, not left to run until the deadline.
-	out.kill = func() { killGroup(cmd.Process) }
-	errOut.kill = out.kill
+	proc.Store(cmd.Process)
 
 	// Kill triggers: the deadline timer AND parent cancellation both
 	// kill the WHOLE process group immediately — CommandContext alone
@@ -117,6 +122,9 @@ func groupAttr() *syscall.SysProcAttr {
 
 // killGroup kills the child's whole process group where supported.
 func killGroup(p *os.Process) {
+	if p == nil {
+		return
+	}
 	if runtime.GOOS != "windows" {
 		_ = syscall.Kill(-p.Pid, syscall.SIGKILL)
 		return
