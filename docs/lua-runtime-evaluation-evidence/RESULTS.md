@@ -1,6 +1,9 @@
 # Raw evaluation outputs (collected verbatim, Apple Silicon macOS 26.6)
 
-All harness sources live next to this file. Every command below was
+All harness sources live next to this file. They carry
+`//go:build ignore` so the repository toolchain never compiles them;
+copy a source into a throwaway module with the pinned dependency to
+re-run. Every command below was
 run inside the pinned throwaway module (`.tmp/eval`, uncommitted).
 
 ## gopher-lua v1.1.1 — `go test -v` (gopher_test.go)
@@ -19,11 +22,11 @@ Sandbox probes (TestSandbox body): `os`, `io`, `require`, `load`,
 `dofile` all resolve to nil; `utils.epoch() == 1700000000` passes
 (injected host clock).
 
-## C Lua 5.4.7 — `./lua54_harness` (lua54_harness.c)
+## C Lua 5.4.7 — `./lua54_harness` (lua54_harness.c.txt)
 
 Tarball: `lua-5.4.7.tar.gz`, sha256
 `9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30`.
-Build: `clang -arch arm64 -O2 -I lua-5.4.7/src lua54_harness.c
+Build: `clang -arch arm64 -O2 -I lua-5.4.7/src lua54_harness.c.txt
 lua-5.4.7/src/liblua.a -lm -o lua54_harness`.
 
 ```

@@ -1,3 +1,8 @@
+//go:build ignore
+
+// Reference source only: excluded from the repository build via the
+// ignore tag. Copy into a throwaway module with the pinned dependency
+// (see RESULTS.md) to re-run. Raw outputs: RESULTS.md.
 package eval
 
 import (
