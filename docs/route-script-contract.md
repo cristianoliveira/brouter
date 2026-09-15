@@ -8,6 +8,25 @@ This contract defines the observable behavior of an optional scripted
 routing hook so that implementation work can be judged against a fixed
 agreement, independent of how the script is executed.
 
+## Confirmed live-edit requirement
+
+Configuration edits must take effect without restarting the router. This
+applies to current TOML configuration and the future optional Lua script:
+a new URL event must observe a newly loaded configuration snapshot, while
+an in-flight URL uses the immutable snapshot it started with. This is a
+confirmed product requirement. The loading, coherence, and failure
+mechanics below remain proposed until implementation review.
+
+## Current loading evidence
+
+The current CLI already loads TOML per command invocation: `runOpen` calls
+`config.Load(path)` before constructing the router, and `runExplain` follows
+the same per-invocation path. The resident macOS shim spawns the embedded
+`brouter open` child separately for each URL event, so current TOML edits are
+picked up by the next event without a handler restart. There is no current
+compiled config cache or file watcher. This evidence does not yet cover a
+future Lua loader.
+
 ## Pipeline position
 
 For one URL, evaluation runs in this fixed order:
@@ -74,10 +93,11 @@ happens before `route` is invoked.
 
 ## Failure and fallback semantics
 
-Everything in this list is fail-closed: the URL continues through
-static rules and default, exactly as if the script returned `nil`, and
-one safe diagnostic category is recorded (no URL, no script text, no
-target name in the diagnostic):
+Runtime evaluation failures in this list remain fail-closed: the URL
+continues through static rules and default, exactly as if the script
+returned `nil`, and one safe diagnostic category is recorded (no URL, no
+script text, no target name in the diagnostic):
+
 
 | Situation                                   | Diagnostic category |
 |---------------------------------------------|---------------------|
@@ -90,9 +110,36 @@ target name in the diagnostic):
   The exact budget value and enforcement mechanism are **UNDECIDED**.
 - Failures are per-URL: other URLs keep using the script. There is no
   automatic global disable after a failure.
+- Loading a new TOML or script snapshot is a separate failure class. A
+  missing, malformed, unstable, or invalid edited file must fail visibly
+  for that URL; it must not silently use a last-known-good snapshot or
+  route to a different target. Whether this is a hard stop or a chosen
+  visible fallback is **UNDECIDED** and requires explicit product approval.
+  A script returning an unknown target remains the `unknown-target`
+  runtime-evaluation case above unless that policy is explicitly changed.
 - A spawned/launched browser remains outside the script's knowledge:
   the script decides a *target*, nothing more; downstream outcome
   reporting (TASK-0023 semantics) is unchanged.
+
+## Per-URL snapshot and edit semantics
+
+The implementation must evaluate each new URL against one immutable
+configuration-plus-script snapshot. It must not use a long-lived watcher,
+compiled stale cache, or an evaluation that can mix files from different
+loads. A symlink is resolved when a new snapshot is loaded; replacing the
+symlink affects the next URL, not an in-flight URL.
+
+Proposed mechanics (**UNDECIDED**): read the TOML and script bytes for the
+same request, check each file for changes during its read, and reject an
+unstable read rather than evaluating partial content. Independently edited
+TOML and script files cannot have a universal atomic commit guarantee;
+the implementation must document that boundary and recommend atomic
+rename/update of each file, or add an explicit coherence marker, rather
+than claim cross-file transactions. Bounded retries and the exact
+stability/coherence check require design review.
+
+`validate` and `explain` should use the same current-file loader semantics
+as `open`; they must never validate or explain a compiled stale snapshot.
 
 ## Immutability and isolation
 
@@ -105,10 +152,13 @@ target name in the diagnostic):
 - Scripts have no I/O: no filesystem, network, processes, or
   environment access. Which standard-library parts are removed or
   stubbed is an implementation decision (**UNDECIDED**).
-- Isolation provider (embedded interpreter vs. separate process), and
-  the config schema that enables a script, are **UNDECIDED**. No
-  config migration is specified in this contract; static rules remain
-  the source of truth and keep working without a script.
+- Isolation provider (embedded interpreter vs. separate process), the
+  config schema that enables a script, and the exact load-failure policy
+  are **UNDECIDED**. No config migration is specified in this contract;
+  static rules remain the source of truth and keep working without a
+  script. Any chosen provider must preserve per-new-URL loading and must
+  not require a router restart or watcher-managed mutable state.
+
 
 ## Privacy
 
@@ -166,6 +216,11 @@ while true do end                              -- script-timeout (budget applies
 Contract tests, not feature tests: pinned clock and IDs; category
 mapping for each failure row; determinism (same ctx ⇒ same result
 across repeats); redaction sweeps asserting URLs never reach any
-diagnostic sink; fallback equivalence (failure output equals nil-case
-output). Engine-agnostic: the suite must pass regardless of the
+diagnostic sink; fallback equivalence (runtime failure output equals
+nil-case output); and live-edit cases proving TOML/script edits apply to
+the next URL without restart while an in-flight request keeps its
+snapshot. Include symlink replacement, atomic rename, malformed/partial
+writes, unstable-read rejection, missing files, and cross-file edit
+boundary cases. Engine-agnostic: the suite must pass regardless of the
 chosen provider.
+

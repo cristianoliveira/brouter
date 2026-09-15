@@ -16,12 +16,12 @@ An implementation-ready, engine-neutral bridge proposal preserves URL and time s
 
 ## Acceptance criteria
 - [ ] Define Go-side interfaces/types for `route(ctx)`, exact URL fields and original bytes, one-sample UTC clock, target-name validation, and safe diagnostic categories.
-- [ ] Define ownership, mutability, per-invocation lifetime, concurrency, cancellation, timeout, and error boundaries; no ambient globals or host environment access.
+- [ ] Define ownership, mutability, per-invocation lifetime, concurrency, cancellation, timeout, and error boundaries; no ambient globals or host environment access. A request receives one immutable config-plus-script snapshot, with no watcher-owned mutable state.
 - [ ] Map every contract happy/unhappy case to a deterministic bridge result, including nil/defer, unknown target, script error, timeout, and downstream outcome unknown.
-- [ ] Provide test seams for fixed URL, clock, IDs, and runtime errors without selecting an engine or changing current static-rule behavior.
+- [ ] Provide test seams for fixed URL, clock, IDs, runtime errors, snapshot identity, and load instability without selecting an engine or changing current static-rule behavior.
 
 ## Verification
-Review the proposal against `docs/route-script-contract.md` and write contract-level examples. No source implementation or dependency change is included.
+Review the proposal against `docs/route-script-contract.md` and write contract-level examples. No source implementation or dependency change is included. The proposal must state how symlink replacement and edits between URL events are observed, and how partial/cross-file reads are rejected or bounded without claiming atomic multi-file transactions.
 
 ## Non-goals
 Runtime selection, Lua embedding, config schema activation, process sandbox implementation, or routing behavior changes.
