@@ -13,8 +13,9 @@ import (
 	"time"
 )
 
-// The helper binary is compiled from the vendored, pinned Lua 5.4.7
-// sources plus native/lua-helper/lua_helper.c. Skipping is honest:
+// The helper binary is compiled from the pinned, hash-verified Lua
+// 5.4.7 sources (bootstrapped by scripts/fetch-lua.sh) plus
+// native/lua-helper/lua_helper.c. Skipping is honest:
 // without a C toolchain this evaluation cannot run here.
 var (
 	helperOnce   sync.Once
@@ -23,8 +24,8 @@ var (
 )
 
 // buildHelper compiles the helper once per test binary and reuses the
-// cached binary for every test: vendored Lua compilation costs seconds
-// and would otherwise be paid by each test function.
+// cached binary for every test: compiling the pinned Lua sources costs
+// seconds and would otherwise be paid by each test function.
 func buildHelper(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -95,7 +96,7 @@ func helperInputs(dir string) (src, luasrc string, sources []string, err error) 
 		}
 	}
 	if len(sources) == 0 {
-		return "", "", nil, fmt.Errorf("vendored lua dir has no linkable .c files")
+		return "", "", nil, fmt.Errorf("pinned lua dir has no linkable .c files")
 	}
 	return src, luasrc, sources, nil
 }

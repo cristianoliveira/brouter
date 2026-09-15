@@ -37,8 +37,8 @@ let
     # verifies compilation.
     doCheck = false;
   };
-  # Isolated route-script helper (TASK-0029): the vendored, pinned
-  # C Lua 5.4.7 sources compiled as a standalone process, so the Go
+  # Isolated route-script helper (TASK-0029): the pinned, hash-
+  # verified C Lua 5.4.7 sources compiled as a standalone process, so the Go
   # router stays CGO-free. Capability libraries (os, io, package,
   # debug) are excluded from the link; the helper opens only
   # base/table/string.
