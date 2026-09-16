@@ -47,8 +47,12 @@ A temporary four-target config and fake executables verified:
 - `make fmt-check`, `make vet`, `make architecture`: PASS.
 - Budgeted coverage from the prior bounded run: cmd/brouter 86.5%, domain 95.8%, config 95.0%: PASS.
 - `GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...`: PASS, `No vulnerabilities found.`
-- `make analyze`: **FAIL** on existing source finding `scripts/macos_handler_test.go:195:6: func testAppMacOSDir is unused (U1000)`. Per instruction, no source change was made; this is a release blocker requiring follow-up.
-- `make check`: **FAIL before tests** because installed golangci-lint is 2.12.2 (built with Go 1.25.12) while the repository expects 2.13.2. This is a toolchain/environment blocker distinct from the staticcheck source finding.
+- `make analyze`: PASS after focused PR #39 (`87d7c20`) removed the only unused `testAppMacOSDir` test helper. The PR changes four test-only lines and no production/native behavior.
+- `make check`: **FAIL before tests** because installed golangci-lint is 2.12.2 (built with Go 1.25.12) while the repository expects 2.13.2. This remains a separate toolchain/environment blocker.
+
+### Focused source follow-up
+
+PR #39 (`87d7c20`) is pushed at `fix/task-0015-remove-dead-macos-test-helper` against current `main`: https://github.com/cristianoliveira/brouter/pull/39. GitHub's macOS and Ubuntu gates pass. Kelly reviewed the exact source tip and returned PASS. The branch is intentionally not merged or used to claim release acceptance.
 
 ### Temporary artifact/signing evidence
 
