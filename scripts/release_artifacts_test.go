@@ -173,32 +173,37 @@ func writeArchiveWithExtraEntry(t *testing.T, path, root, version, extraName str
 	}
 	compressed := gzip.NewWriter(file)
 	archive := tar.NewWriter(compressed)
-	if err := archive.WriteHeader(&tar.Header{Name: root, Mode: 0o755, Typeflag: tar.TypeDir}); err != nil {
-		t.Fatal(err)
-	}
+	mustWriteTarHeader(t, archive, &tar.Header{Name: root, Mode: 0o755, Typeflag: tar.TypeDir})
 	versionBytes := []byte(version + "\n")
-	if err := archive.WriteHeader(&tar.Header{Name: root + "/VERSION", Mode: 0o644, Size: int64(len(versionBytes))}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := archive.Write(versionBytes); err != nil {
-		t.Fatal(err)
-	}
+	mustWriteTarHeader(t, archive, &tar.Header{Name: root + "/VERSION", Mode: 0o644, Size: int64(len(versionBytes))})
+	mustWriteTar(t, archive, versionBytes)
 	if extraName != "" {
 		extraBytes := []byte("extra")
-		if err := archive.WriteHeader(&tar.Header{Name: extraName, Mode: 0o644, Size: int64(len(extraBytes))}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := archive.Write(extraBytes); err != nil {
-			t.Fatal(err)
-		}
+		mustWriteTarHeader(t, archive, &tar.Header{Name: extraName, Mode: 0o644, Size: int64(len(extraBytes))})
+		mustWriteTar(t, archive, extraBytes)
 	}
-	if err := archive.Close(); err != nil {
+	mustClose(t, archive)
+	mustClose(t, compressed)
+	mustClose(t, file)
+}
+
+func mustWriteTarHeader(t *testing.T, archive *tar.Writer, header *tar.Header) {
+	t.Helper()
+	if err := archive.WriteHeader(header); err != nil {
 		t.Fatal(err)
 	}
-	if err := compressed.Close(); err != nil {
+}
+
+func mustWriteTar(t *testing.T, archive *tar.Writer, contents []byte) {
+	t.Helper()
+	if _, err := archive.Write(contents); err != nil {
 		t.Fatal(err)
 	}
-	if err := file.Close(); err != nil {
+}
+
+func mustClose(t *testing.T, closer io.Closer) {
+	t.Helper()
+	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
