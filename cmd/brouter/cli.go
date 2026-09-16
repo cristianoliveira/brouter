@@ -30,6 +30,7 @@ func newCLI(stdin io.Reader, stdout, stderr io.Writer) *cli {
 
 	root := &cobra.Command{
 		Use:          "brouter",
+		Version:      version,
 		Short:        "Route URLs to browsers using a config file you own.",
 		SilenceUsage: true,         // errors print the message; a usage wall helps no one
 		Args:         cobra.NoArgs, // unknown commands error instead of falling through to root
@@ -51,6 +52,7 @@ URLs may contain sensitive data; brouter does not log them.`,
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.SetIn(stdin)
+	root.SetVersionTemplate("{{.Version}}\n")
 
 	var (
 		validateConfig string

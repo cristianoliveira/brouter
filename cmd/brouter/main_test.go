@@ -47,6 +47,22 @@ func runCapture(t *testing.T, stdin string, args ...string) (int, string, string
 	return code, stdout.String(), stderr.String()
 }
 
+func TestVersionFlagShowsBuildVersion(t *testing.T) {
+	// Given a build-time version, when --version is requested, it prints
+	// only that version and performs no project I/O.
+	code, stdout, stderr := runCapture(t, "", "--version")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if stdout != version+"\n" {
+		t.Errorf("stdout = %q, want %q", stdout, version+"\n")
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
 func TestHelpInvocationShowsUsage(t *testing.T) {
 	// Given every help-style invocation, when the CLI runs, it succeeds
 	// with usage on stdout and nothing on stderr.
