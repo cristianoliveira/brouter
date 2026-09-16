@@ -20,6 +20,12 @@ import (
 // stops the open. Flag parsing lives in the Cobra command layer
 // (cli.go); args holds zero or one positional URL.
 func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// A multi-document command line bypasses singleInput (which enforces
+	// exactly one URL): the batch is all-or-nothing by preflight.
+	if code, handled := openDocumentBatchFromArgs(args, configPath, stderr, stdout); handled {
+		return code
+	}
+
 	rawURL, ok := singleInput("open", args, stdin, stderr)
 	if !ok {
 		return exitUsage
@@ -47,15 +53,8 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 	// TASK-0029. Only the exact @default line defers to the static
 	// rules; every command failure is visible and stops the open —
 	// never a silent fallback.
-	if cfg.RouteCommand != nil {
-		res, decided, cerr := decideByCommand(cfg, path, rawURL, stderr)
-		if cerr != nil {
-			return exitFailure
-		}
-		if decided {
-			return launchCommandTarget(cfg, res, rawURL, stderr, stdout)
-		}
-		// @default — fall through to the static router.
+	if code, handled := openByRouteCommand(cfg, path, rawURL, stderr, stdout); handled {
+		return code
 	}
 
 	decision, err := router.Evaluate(rawURL)
@@ -118,6 +117,94 @@ func launchTarget(def config.TargetDefinition, name, rawURL string, stderr, stdo
 
 	fmt.Fprintf(stdout, "launched: %s (%s)\n", name, plan.Detail)
 	return exitSuccess
+}
+
+// openByRouteCommand consults the external routing command and, when
+// it decided, launches its target. handled is false only for a
+// @default defer, which falls through to the static router.
+func openByRouteCommand(cfg *config.Config, configPath, rawURL string, stderr, stdout io.Writer) (int, bool) {
+	if cfg.RouteCommand == nil {
+		return 0, false
+	}
+	res, decided, err := decideByCommand(cfg, configPath, rawURL, stderr)
+	if err != nil {
+		return exitFailure, true
+	}
+	if !decided {
+		return 0, false
+	}
+	return launchCommandTarget(cfg, res, rawURL, stderr, stdout), true
+}
+
+// openDocumentBatchFromArgs runs the all-or-nothing document batch
+// when the arguments are one; handled is false for anything else.
+func openDocumentBatchFromArgs(args []string, configPath string, stderr, stdout io.Writer) (int, bool) {
+	if !isDocumentBatch(args) {
+		return 0, false
+	}
+	_, cfg, code, ok := loadConfigForOpen(configPath, stderr)
+	if !ok {
+		return code, true
+	}
+	return openDocumentBatch(args, cfg, stderr, stdout)
+}
+
+// isDocumentBatch reports whether the arguments are a multi-document
+// command line: two or more arguments, all local documents. The OS
+// never mixes documents with URLs in one event, so a mixed command
+// line is not a batch — it fails later as a usage error.
+func isDocumentBatch(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	for _, arg := range args {
+		if !localfile.IsLocalFile(arg) {
+			return false
+		}
+	}
+	return true
+}
+
+// openDocumentBatch handles a multi-document command line: the whole
+// batch is rejected before any browser starts when even one document
+// fails preflight — valid files never launch alongside a failed one.
+func openDocumentBatch(args []string, cfg *config.Config, stderr, stdout io.Writer) (int, bool) {
+	fileURLs := make([]string, 0, len(args))
+	for _, arg := range args {
+		fileURL, err := localfile.Resolve(arg)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return exitFailure, true
+		}
+		fileURLs = append(fileURLs, fileURL)
+	}
+	return launchDocuments(cfg, fileURLs, stderr, stdout)
+}
+
+// launchDocuments resolves the default configured browser once and
+// launches it once per file URL. A launch failure stops the remaining
+// launches and is reported visibly.
+func launchDocuments(cfg *config.Config, fileURLs []string, stderr, stdout io.Writer) (int, bool) {
+	name := string(cfg.Default)
+	def, defined := cfg.Targets[name]
+	if !defined {
+		fmt.Fprintf(stderr, "target %q is not defined in browsers\n", name)
+		return exitFailure, true
+	}
+
+	plan, err := launch.Resolve(def, name, launch.SystemEnv())
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return exitFailure, true
+	}
+	for _, fileURL := range fileURLs {
+		if err := launch.LaunchFile(plan, fileURL, nil); err != nil {
+			fmt.Fprintf(stderr, "open failed: %v\n", err)
+			return exitFailure, true
+		}
+		fmt.Fprintf(stdout, "launched: %s (%s)\n", name, plan.Detail)
+	}
+	return exitSuccess, true
 }
 
 // launchLocalDocument opens a validated local document in the default

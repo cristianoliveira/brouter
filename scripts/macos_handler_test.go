@@ -368,23 +368,38 @@ func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
 		t.Fatalf("handler run failed: %v\n%s", err, out)
 	}
 
-	// Three spawns share one append-only log: the per-spawn argv groups
-	// (open, --config, <cfg>, <input>) interleave at line granularity,
-	// so the assertion is set-wise over the forwarded inputs.
-	argv := readArgvFile(t, waitForFile(t, filepath.Join(stubDir, "argv.log")))
+	assertForwardedInputs(t, filepath.Join(stubDir, "argv.log"), 2,
+		first, second, "https://example.com/missing")
+}
+
+// assertForwardedInputs checks a stub log for exactly wantSpawns
+// invocations and each listed input forwarded exactly once. Spawn
+// groups interleave at line granularity (append-only shared log), so
+// the inputs are asserted set-wise.
+func assertForwardedInputs(t *testing.T, log string, wantSpawns int, inputs ...string) {
+	t.Helper()
+	argv := readArgvFile(t, waitForFile(t, log))
+	spawnCount := 0
 	forwarded := map[string]int{}
 	for _, line := range argv {
-		switch line {
-		case first, second, "https://example.com/missing":
-			forwarded[line]++
+		if line == "open" {
+			spawnCount++
+		}
+		for _, input := range inputs {
+			if line == input {
+				forwarded[input]++
+			}
 		}
 	}
-	if len(forwarded) != 3 {
-		t.Fatalf("forwarded inputs = %v, want exactly the two documents and the URL", forwarded)
+	if spawnCount != wantSpawns {
+		t.Errorf("spawn count = %d, want %d", spawnCount, wantSpawns)
+	}
+	if len(forwarded) != len(inputs) {
+		t.Fatalf("forwarded inputs = %v, want exactly %v", forwarded, inputs)
 	}
 	for input, count := range forwarded {
 		if count != 1 {
-			t.Errorf("input %q forwarded %d times, want exactly one spawn per input", input, count)
+			t.Errorf("input %q forwarded %d times, want exactly once", input, count)
 		}
 	}
 }

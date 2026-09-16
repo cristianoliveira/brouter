@@ -106,6 +106,18 @@ func TestOpenFilesDelegateForwardsWarmDocuments(t *testing.T) {
 	}
 }
 
+// countSpawns counts embedded-brouter invocations recorded in a stub
+// log (each spawn's argv starts with the literal "open").
+func countSpawns(lines []string) int {
+	spawns := 0
+	for _, line := range lines {
+		if line == "open" {
+			spawns++
+		}
+	}
+	return spawns
+}
+
 // assertForwardedOncePerFixtureDocument checks the stub log: every
 // fixture document in dir arrives exactly once as a file URL whose
 // decoded path names the on-disk file. The comparison decodes each
@@ -132,6 +144,11 @@ func decodedFixtureURLs(lines []string, onDisk map[string]bool) []string {
 
 func assertForwardedOncePerFixtureDocument(t *testing.T, stubLog, dir string) {
 	t.Helper()
+	// The whole warm event arrives as ONE batched spawn: brouter
+	// preflights every document before any browser starts.
+	if spawns := countSpawns(readArgvFile(t, stubLog)); spawns != 1 {
+		t.Fatalf("document spawns = %d, want exactly one batched spawn", spawns)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("fixture documents: %v", err)

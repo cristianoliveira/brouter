@@ -5,6 +5,8 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
+
+	"github.com/cristianoliveira/brouter/internal/infra/localfile"
 )
 
 // cli owns the Cobra command tree and the exit code produced by one
@@ -103,8 +105,17 @@ never writes to disk.`,
 URL from stdin when the argument is missing. Never uses a shell or the
 system default handler; failures are reported, never silently rerouted.`,
 		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 1 {
-				return fmt.Errorf("open takes exactly one URL argument")
+			// More than one argument is valid only when every argument is
+			// a local document batch (TASK-0033); anything else — URLs
+			// especially — stays single-input. The mixed case is rejected
+			// here: the OS never mixes documents and URLs in one event.
+			if len(args) <= 1 {
+				return nil
+			}
+			for _, arg := range args {
+				if !localfile.IsLocalFile(arg) {
+					return fmt.Errorf("open takes exactly one URL argument, or multiple local documents")
+				}
 			}
 			return nil
 		},

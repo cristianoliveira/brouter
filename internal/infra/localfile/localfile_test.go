@@ -116,6 +116,13 @@ func TestResolveRejectsWithRedactedVisibleErrors(t *testing.T) {
 		{name: "file URL with remote host", prepare: func(t *testing.T) string {
 			return "file://server.example.com/x.html"
 		}, wantErr: ErrUnsupportedType},
+		{name: "executable document", prepare: func(t *testing.T) string {
+			p := writeDoc(t, "report.html")
+			if err := os.Chmod(p, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return p
+		}, wantErr: ErrExecutable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := tc.prepare(t)
@@ -148,7 +155,7 @@ func TestResolveAcceptsBrowserViewableTypes(t *testing.T) {
 	// browsers render natively — markup, PDF, SVG, common rasters, and
 	// plain text.
 	for _, ext := range []string{
-		".html", ".htm", ".pdf", ".svg",
+		".html", ".htm", ".xhtml", ".pdf", ".svg",
 		".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 		".txt",
 	} {
@@ -168,15 +175,30 @@ func TestResolveRejectsNonViewableTypes(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsExecutableFilesByType(t *testing.T) {
-	// An executable is rejected through the same extension rule as any
-	// other input: it is never launched, never executed, never handed
-	// to the OS opener.
+func TestResolveRejectsScriptTypesEvenWhenNotExecutable(t *testing.T) {
+	// Script types are rejected by the extension rule regardless of the
+	// executable bit: they are never launched, never executed, never
+	// handed to the OS opener.
 	path := filepath.Join(t.TempDir(), "tool.sh")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Resolve(path); !errors.Is(err, ErrUnsupportedType) {
 		t.Fatalf("Resolve() error = %v, want ErrUnsupportedType", err)
+	}
+}
+
+func TestResolveRejectsExecutableModeRegardlessOfType(t *testing.T) {
+	// An executable bit turns the file into code, whatever the
+	// extension claims: it is never launched, never executed — it is
+	// rejected like any other unsupported input.
+	for _, name := range []string{"report.html", "deck.pdf", "image.png"} {
+		p := writeDoc(t, name)
+		if err := os.Chmod(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Resolve(p); !errors.Is(err, ErrExecutable) {
+			t.Errorf("Resolve(%q) error = %v, want ErrExecutable", name, err)
+		}
 	}
 }

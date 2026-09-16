@@ -449,15 +449,26 @@ func TestOpenRejectsUnsupportedLocalDocumentsWithRedactedErrors(t *testing.T) {
 			wantText: "not supported",
 		},
 		{
-			name: "executable",
+			name: "script extension",
 			prepare: func(dir string) string {
 				p := filepath.Join(dir, "tool.sh")
-				if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+				if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return p
 			},
 			wantText: "not supported",
+		},
+		{
+			name: "executable document",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "report.html")
+				if err := os.WriteFile(p, []byte("<html></html>"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "executable",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -536,4 +547,86 @@ func writeLocalDocument(t *testing.T, dir, name, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestOpenBatchesLocalDocumentsAllOrNothing(t *testing.T) {
+	// Given several valid local documents, when open runs with them all,
+	// the default browser launches once per document, each with its
+	// encoded file URL as the sole argument.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	first := writeLocalDocument(t, dir, "my docs/a report.html", "<html></html>")
+	second := writeLocalDocument(t, dir, "deck.pdf", "%PDF")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, first, second)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	wantFirst, err := localfile.Resolve(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSecond, err := localfile.Resolve(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 2 || argv[0] != wantFirst || argv[1] != wantSecond {
+		t.Errorf("browser argv = %q, want one encoded launch per document (%q, %q)", argv, wantFirst, wantSecond)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestOpenRejectsTheWholeBatchWhenOneDocumentFailsPreflight(t *testing.T) {
+	// Given a mixed batch where one document is missing, when open runs,
+	// the whole batch is rejected before any browser starts: valid files
+	// never launch alongside a failed one.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	good := writeLocalDocument(t, dir, "good.html", "<html></html>")
+	missing := filepath.Join(dir, "gone.pdf")
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, good, missing)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "does not exist") {
+		t.Errorf("stderr = %q, want the missing-document category", stderr)
+	}
+	if strings.Contains(stderr, dir) {
+		t.Errorf("stderr = %q leaks input paths — diagnostics must stay redacted", stderr)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a browser process started despite a failed preflight")
+	}
+}
+
+func TestOpenMixedFileAndURLArgumentsIsAUsageError(t *testing.T) {
+	// The OS never mixes documents and URLs in one event; a command
+	// line that does is rejected as usage rather than guessed.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	doc := writeLocalDocument(t, dir, "good.html", "<html></html>")
+
+	code, _, _ := runCapture(t, "", "open", "--config", path, doc, "https://example.com/x")
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want the usage code 2", code)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a browser process started for a usage error")
+	}
 }

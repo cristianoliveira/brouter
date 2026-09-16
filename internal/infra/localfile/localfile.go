@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -20,6 +21,7 @@ var (
 	ErrMissing         = errors.New("local document does not exist (path redacted)")
 	ErrNotRegularFile  = errors.New("local document is not a regular file (path redacted)")
 	ErrUnreadable      = errors.New("local document is not readable (path redacted)")
+	ErrExecutable      = errors.New("local document is executable (path redacted)")
 	ErrUnsupportedType = errors.New("local document type is not supported by browser routing (path redacted)")
 )
 
@@ -29,17 +31,18 @@ var (
 // visible error: there is no wildcard and no fallback to the OS
 // default opener, so an unsupported file can never recurse.
 var viewableExtensions = map[string]bool{
-	".html": true,
-	".htm":  true,
-	".pdf":  true,
-	".svg":  true,
-	".png":  true,
-	".jpg":  true,
-	".jpeg": true,
-	".gif":  true,
-	".webp": true,
-	".bmp":  true,
-	".txt":  true,
+	".html":  true,
+	".htm":   true,
+	".xhtml": true,
+	".pdf":   true,
+	".svg":   true,
+	".png":   true,
+	".jpg":   true,
+	".jpeg":  true,
+	".gif":   true,
+	".webp":  true,
+	".bmp":   true,
+	".txt":   true,
 }
 
 // IsLocalFile reports whether raw refers to a local document rather
@@ -86,6 +89,12 @@ func Resolve(raw string) (string, error) {
 	}
 	if !info.Mode().IsRegular() {
 		return "", ErrNotRegularFile
+	}
+	// An executable bit makes the file code, whatever the extension
+	// claims: documents are data and are never executed. The check is
+	// unix-only — Windows stat bits are not meaningful.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 != 0 {
+		return "", ErrExecutable
 	}
 	file, err := os.Open(path)
 	if err != nil {

@@ -206,21 +206,21 @@ static void AppendLog(NSString *message) {
 // visible. spawn is fire-and-forget; per-child exit status is not
 // tracked (documented limitation, consistent with the launch probes).
 //
-// Each step records a structured activity entry: receipt precedes
-// validation, preflight failures carry a safe category, and a
-// successful spawn records dispatch-started with outcome unknown — a
-// spawned child is not proof a browser opened or a page loaded.
+// ForwardURLsShim forwards each web URL by spawning the embedded
+// brouter with structured arguments — never a shell. The child
+// inherits no terminal: its output is appended to the diagnostics log
+// so GUI-originated failures stay visible. spawn is fire-and-forget;
+// per-child exit status is not tracked (documented limitation,
+// consistent with the launch probes). Each step records a structured
+// activity entry: receipt precedes validation, preflight failures
+// carry a safe category, and a successful spawn records
+// dispatch-started with outcome unknown — a spawned child is not proof
+// a browser opened or a page loaded.
 void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 	NSArray<NSString *> *urls) {
 	for (NSString *url in urls) {
-		// Receipt is recorded before any validation, so the menu can
-		// answer whether an event even arrived.
 		[activity recordKind:@"receipt" entryPoint:entryPoint
 			errorCategory:nil detail:-1];
-
-		// Privacy: log the event, never the URL. Query strings and
-		// fragments can carry secrets; the browser's own history and
-		// the destination server are the record of what was opened.
 		AppendLog(@"forwarding URL event");
 
 		NSString *brouter = EmbeddedBrouterPath();
@@ -264,12 +264,71 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 			[activity recordKind:@"dispatch-failed" entryPoint:entryPoint
 				errorCategory:@"spawn-failed" detail:spawnErr];
 		} else {
-			// Fire-and-forget: the child's later outcome (config
-			// validation, browser resolution, page load) is not
-			// observable here and stays unknown by design.
 			[activity recordKind:@"dispatch-started" entryPoint:entryPoint
 				errorCategory:nil detail:-1];
 		}
+	}
+}
+
+// ForwardDocumentsShim hands a batch of local documents to the
+// embedded brouter in ONE spawn (TASK-0033): brouter preflights every
+// document before launching any browser, so a batch is all-or-nothing
+// — a valid file never launches alongside a failed one. Same redacted
+// logging and fire-and-forget dispatch as URL forwarding.
+void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
+	NSArray<NSString *> *paths) {
+	[activity recordKind:@"receipt" entryPoint:entryPoint
+		errorCategory:nil detail:-1];
+	AppendLog(@"forwarding URL event");
+
+	NSString *brouter = EmbeddedBrouterPath();
+	NSString *config = ConfigPath();
+	if (config == nil) {
+		AppendLog(@"error: cannot determine the user config directory: "
+			@"set $XDG_CONFIG_HOME to an absolute path, or set $HOME");
+		[activity recordKind:@"preflight" entryPoint:entryPoint
+			errorCategory:@"unavailable-config-directory" detail:-1];
+		return;
+	}
+	if (![[NSFileManager defaultManager] isExecutableFileAtPath:brouter]) {
+		AppendLog([NSString stringWithFormat:@"error: embedded brouter missing at %@", brouter]);
+		[activity recordKind:@"preflight" entryPoint:entryPoint
+			errorCategory:@"missing-embedded-binary" detail:-1];
+		return;
+	}
+	[activity recordKind:@"preflight" entryPoint:entryPoint
+		errorCategory:nil detail:-1];
+
+	NSString *log = HandlerLogPath();
+	posix_spawn_file_actions_t actions;
+	posix_spawn_file_actions_init(&actions);
+	posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, log.fileSystemRepresentation,
+		O_WRONLY | O_APPEND | O_CREAT, 0644);
+	posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+
+	NSMutableArray<NSString *> *argvStrings = [NSMutableArray arrayWithObjects:
+		brouter, @"open", @"--config", config, nil];
+	for (NSString *path in paths) {
+		[argvStrings addObject:path];
+	}
+
+	NSInteger argc = [argvStrings count];
+	char *argv[argc + 1];
+	for (NSInteger i = 0; i < argc; i++) {
+		argv[i] = (char *)argvStrings[i].UTF8String;
+	}
+	argv[argc] = NULL;
+
+	pid_t pid = -1;
+	int spawnErr = posix_spawn(&pid, brouter.fileSystemRepresentation, &actions, NULL, argv, environ);
+	posix_spawn_file_actions_destroy(&actions);
+	if (spawnErr != 0) {
+		AppendLog([NSString stringWithFormat:@"error: spawn failed (%d)", spawnErr]);
+		[activity recordKind:@"dispatch-failed" entryPoint:entryPoint
+			errorCategory:@"spawn-failed" detail:spawnErr];
+	} else {
+		[activity recordKind:@"dispatch-started" entryPoint:entryPoint
+			errorCategory:nil detail:-1];
 	}
 }
 
@@ -511,7 +570,9 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 		}
 	}
 	if (specs.count > 0) {
-		ForwardURLsShim(_activity, @"os-event", specs);
+		// One batched spawn: brouter preflights the whole set before any
+	// browser starts (all-or-nothing, TASK-0033).
+	ForwardDocumentsShim(_activity, @"os-event", specs);
 	}
 }
 
@@ -535,10 +596,25 @@ int main(int argc, const char *argv[]) {
 		}
 
 		if (argvURLs.count > 0) {
-			// Launched with URLs on the command line (or via LaunchServices
-			// argv handoff): forward and exit. Testable without LaunchServices.
+			// Launched with inputs on the command line (or via
+			// LaunchServices argv handoff): forward and exit. Testable
+			// without LaunchServices. Web URLs stay per-URL spawns;
+			// documents batch into one spawn so brouter can preflight
+			// them all-or-nothing.
 			RecentActivity *activity = [[RecentActivity alloc] init];
-			ForwardURLsShim(activity, @"argv", argvURLs);
+			NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
+			NSMutableArray<NSString *> *documents = [NSMutableArray array];
+			for (NSString *argument in argvURLs) {
+				BOOL isDocument = [argument hasPrefix:@"file://"] ||
+					[[NSFileManager defaultManager] fileExistsAtPath:argument];
+				[isDocument ? documents : webURLs addObject:argument];
+			}
+			if (webURLs.count > 0) {
+				ForwardURLsShim(activity, @"argv", webURLs);
+			}
+			if (documents.count > 0) {
+				ForwardDocumentsShim(activity, @"argv", documents);
+			}
 			return 0;
 		}
 
