@@ -2,7 +2,7 @@
 id: TASK-0033
 title: Open local documents with the default browser
 status: done
-depends_on: [TASK-0030]
+depends_on: []
 tags: [macos, local-files, browser]
 ---
 
