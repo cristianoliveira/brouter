@@ -82,7 +82,7 @@ This task is closed by explicit user triage/deferral, not by a QA pass and not b
 
 ### Deferred / unverified gates
 
-- The full end-to-end matrix remains unverified: default routing, host/subdomain/regex rules, fallback, profiles, invalid configuration, missing browser/profile, cold/warm launches, and repeated OS URL delivery.
+- The full real-platform end-to-end matrix remains unverified. The bounded CLI subset above passed for default, exact-host, subdomain, URL-regex, unmatched-default, malformed TOML, missing executable, and missing known-browser profile; those results do not establish real-browser, LaunchServices, or cross-platform runtime acceptance. Profiles, cold/warm launches, and repeated OS URL delivery remain unverified.
 - Clean-environment install, explicit default selection, update, uninstall/restore, and multi-platform runtime behavior remain unverified.
 - Developer ID signing, Gatekeeper transfer, notarization, and a full release matrix remain unverified; the artifact has build-time ad-hoc signing only.
 - The published release body still contains stale “unpublished DRAFT” wording; it was not changed under this plans-only closure.
