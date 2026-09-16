@@ -38,10 +38,10 @@ The first authorized tag run completed successfully from `main`:
 - Tag: `v0.1.0`.
 - Target commit: `5c7d5d331a16920e8683a3b0fef09d5305f220c5`.
 - Workflow run: [35130454143](https://github.com/cristianoliveira/brouter/actions/runs/35130454143).
-- Draft release: [Brouter v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/untagged-27ace58a8a5339e71fc0).
-- The draft contains all five expected assets: `brouter-v0.1.0-linux-x86_64.tar.gz`, `brouter-v0.1.0-linux-aarch64.tar.gz`, `brouter-v0.1.0-darwin-arm64.tar.gz`, `brouter-handler-v0.1.0-darwin-arm64.tar.gz`, and `SHA256SUMS`.
+- Initial draft release: [Brouter v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/untagged-27ace58a8a5339e71fc0).
+- The release contains all five expected assets: `brouter-v0.1.0-linux-x86_64.tar.gz`, `brouter-v0.1.0-linux-aarch64.tar.gz`, `brouter-v0.1.0-darwin-arm64.tar.gz`, `brouter-handler-v0.1.0-darwin-arm64.tar.gz`, and `SHA256SUMS`.
 
-Downloaded assets were inspected: `sha256sum -c SHA256SUMS` passed; every archive contained its expected target root, executable or app payload, and `VERSION` set to `0.1.0`; and the manifest contained sorted checksums for all four archives. The macOS workflow log records ad-hoc signing and the app archive contains the code-signature resources plus `CFBundleShortVersionString=0.1.0` and `CFBundleVersion=010`. The release remains a draft and unpublished (`publishedAt` is null); no publication or tag mutation was performed.
+Downloaded assets were inspected: `sha256sum -c SHA256SUMS` passed; every archive contained its expected target root, executable or app payload, and `VERSION` set to `0.1.0`; and the manifest contained sorted checksums for all four archives. The macOS workflow log records ad-hoc signing and the app archive contains the code-signature resources plus `CFBundleShortVersionString=0.1.0` and `CFBundleVersion=010`. After draft inspection, publication was explicit and manual outside the workflow; the current release is published (`isDraft=false`, `publishedAt=2026-09-16T18:48:36Z`) at [v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/v0.1.0). No tag mutation was performed.
 
 No protected `v*` tag ruleset was found through the repository API, and no repository settings were changed. Publication, production signing/notarization, runtime GUI, browser, and nix-darwin acceptance remain separate gates in TASK-0015, TASK-0019, and TASK-0024.
 
