@@ -275,3 +275,46 @@ func countSpawnsAndLine(t *testing.T, log, want string) (int, int) {
 	}
 	return spawnCount, wantCount
 }
+
+func TestOpenFilesMultiHTTPKeepsPerURLForwarding(t *testing.T) {
+	// openURLs: with several HTTP(S) URLs must forward each through its
+	// own per-URL spawn — never into the document batch.
+	if runtime.GOOS != "darwin" {
+		t.Skip("the macOS handler documents path is darwin-only")
+	}
+	h := compileOpenFilesHarness(t)
+
+	cmd := exec.Command(h.binary, "warm-http", h.documentsDir)
+	cmd.Env = append(os.Environ(),
+		"STUB_ARGV_LOG="+h.stubArgvLog,
+		"BRROUTER_HANDLER_LOG="+h.handlerLog,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("warm-http harness failed: %v\n%s", err, out)
+	}
+
+	urls := []string{"https://one.example/a", "https://two.example/b"}
+	for _, want := range urls {
+		pollUntilLineLogged(t, h.stubArgvLog, want)
+	}
+	spawnCount := countSpawns(readArgvFile(t, h.stubArgvLog))
+	if spawnCount != len(urls) {
+		t.Errorf("spawn count = %d, want one per-URL spawn per HTTP URL", spawnCount)
+	}
+	for _, want := range urls {
+		if got := countOccurrences(readArgvFile(t, h.stubArgvLog), want); got != 1 {
+			t.Errorf("URL %q forwarded %d times, want exactly once", want, got)
+		}
+	}
+}
+
+// countOccurrences counts exact-line occurrences in the logged lines.
+func countOccurrences(lines []string, want string) int {
+	count := 0
+	for _, line := range lines {
+		if line == want {
+			count++
+		}
+	}
+	return count
+}

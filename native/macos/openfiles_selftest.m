@@ -141,6 +141,14 @@ int main(int argc, const char *argv[]) {
 				fprintf(stderr, "FAIL dispatchRawAppleEvent (%d)\n", status);
 				return 3;
 			}
+		} else if ([mode isEqualToString:@"warm-http"]) {
+			// Multi-HTTP warm array: every web URL keeps its own
+			// per-URL spawn — no batching, no misrouting into the
+			// document path.
+			[delegate application:application openURLs:@[
+				[NSURL URLWithString:@"https://one.example/a"],
+				[NSURL URLWithString:@"https://two.example/b"],
+			]];
 		} else if ([mode isEqualToString:@"warm-mixed"]) {
 			// The header hands openURLs: ANY URLs — documents AND web
 			// schemes. A mixed array must split: documents batch into
@@ -184,20 +192,35 @@ int main(int argc, const char *argv[]) {
 			if ([line isEqualToString:wantSecond]) secondCount++;
 			if ([line isEqualToString:wantWeb]) webCount++;
 		}
-		// Documents must arrive as ONE batched spawn. In the mixed
-		// scenario the web URL adds exactly one more spawn of its own.
-		int wantSpawns = [mode isEqualToString:@"warm-mixed"] ? 2 : 1;
+		// Per-scenario forwarding contract:
+		//   warm           — 2 documents, ONE batched spawn
+		//   warm-dispatch  — same, delivered via real Apple Event dispatch
+		//   warm-mixed     — 2 documents batched + 1 web URL per-URL (2 spawns)
+		//   warm-http      — 2 web URLs, one per-URL spawn each (2 spawns)
+		int wantSpawns = 1;
+		if ([mode isEqualToString:@"warm-mixed"] || [mode isEqualToString:@"warm-http"]) {
+			wantSpawns = 2;
+		}
 		if (spawnCount != wantSpawns) {
 			fprintf(stderr, "FAIL spawns=%d want=%d\n", spawnCount, wantSpawns);
 			return 3;
 		}
-		if (firstCount != 1 || secondCount != 1) {
-			fprintf(stderr, "FAIL forwards first=%d second=%d\n", firstCount, secondCount);
-			return 3;
-		}
-		if ([mode isEqualToString:@"warm-mixed"] && webCount != 1) {
-			fprintf(stderr, "FAIL web forwards=%d want=1\n", webCount);
-			return 3;
+		BOOL isHTTPOnly = [mode isEqualToString:@"warm-http"];
+		if (isHTTPOnly) {
+			// HTTP-only event: neither document may appear anywhere.
+			if (firstCount != 0 || secondCount != 0) {
+				fprintf(stderr, "FAIL http event leaked documents first=%d second=%d\n", firstCount, secondCount);
+				return 3;
+			}
+		}	else {
+			if (firstCount != 1 || secondCount != 1) {
+				fprintf(stderr, "FAIL forwards first=%d second=%d\n", firstCount, secondCount);
+				return 3;
+			}
+			if ([mode isEqualToString:@"warm-mixed"] && webCount != 1) {
+				fprintf(stderr, "FAIL web forwards=%d want=1\n", webCount);
+				return 3;
+			}
 		}
 
 		// Privacy contract on the warm path: the event is logged, the
