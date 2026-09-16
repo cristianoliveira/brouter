@@ -379,7 +379,29 @@ func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
 // the inputs are asserted set-wise.
 func assertForwardedInputs(t *testing.T, log string, wantSpawns int, inputs ...string) {
 	t.Helper()
-	argv := readArgvFile(t, waitForFile(t, log))
+	// The stub appends line by line while the shim spawns
+	// asynchronously: poll until every input line has landed (or time
+	// out) — file existence alone can catch a half-written log.
+	deadline := time.Now().Add(5 * time.Second)
+	var argv []string
+	for {
+		argv = readArgvFile(t, waitForFile(t, log))
+		seen := map[string]bool{}
+		for _, line := range argv {
+			for _, input := range inputs {
+				if line == input {
+					seen[input] = true
+				}
+			}
+		}
+		if len(seen) == len(inputs) {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	spawnCount := 0
 	forwarded := map[string]int{}
 	for _, line := range argv {
