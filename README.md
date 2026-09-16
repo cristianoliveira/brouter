@@ -1,9 +1,11 @@
 
+<img width="50" height="50" align="right" alt="brouter logo" src="docs/assets/readme-logo.svg" />
+
 `brouter` routes URLs to the right browser based on a version-controlled
 configuration — separate work and personal contexts without hand-editing GUI
 settings or guessing why a rule matched.
 
-<img width="50" height="50" align="right" alt="brouter logo" src="docs/assets/readme-logo.svg" />
+
 
 ## Open a URL
 
