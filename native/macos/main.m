@@ -541,9 +541,12 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 
 // OpenDocumentsDelegate receives the kAEOpenDocuments Apple Events
 // (TASK-0033): LaunchServices delivers local documents here when the
-// handler is already running (warm path), decoded to file URLs. Every
-// document is forwarded, one spawn per file, with the same redacted
-// logging as URL events. The shim holds no document policy — what may
+// handler is already running (warm path), decoded to file URLs. The
+// delivery surface is exactly the modern NSApplicationDelegate
+// selector -application:open: (macOS 10.13+, non-deprecated); the
+// deprecated -application:openFiles: is deliberately NOT implemented
+// so AppKit has exactly one dispatch target and documents can never
+// be delivered twice. The shim holds no document policy — what may
 // open and how errors surface is entirely brouter's decision.
 @interface OpenDocumentsDelegate : NSObject <NSApplicationDelegate>
 - (instancetype)initWithActivity:(RecentActivity *)activity;
@@ -585,12 +588,18 @@ int main(int argc, const char *argv[]) {
 			NSString *argument = [NSString stringWithUTF8String:argv[i]];
 			// Cold launch: web URLs ride argv as before; local documents
 			// arrive as file:// URLs (LaunchServices handoff) or as plain
-			// paths (command line, open -a). Existence here is only a
-			// routing hint — extension and type policy lives in brouter.
+			// paths (command line, open -a). Existence is NOT a filter:
+			// a path-looking argument — including one that does not
+			// exist — is forwarded so brouter reports it visibly
+			// (redacted), never dropped in silence. Only a bare token
+			// with no path shape is ignored: LaunchServices can never
+			// hand one over, and the policy for it lives in brouter.
 			BOOL isWebURL = [argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"];
 			BOOL isFileURL = [argument hasPrefix:@"file://"];
-			BOOL isFilePath = [[NSFileManager defaultManager] fileExistsAtPath:argument];
-			if (isWebURL || isFileURL || isFilePath) {
+			BOOL looksLikePath = [argument hasPrefix:@"/"] ||
+				[argument hasPrefix:@"~"] ||
+				[argument containsString:@"/"];
+			if (isWebURL || isFileURL || looksLikePath) {
 				[argvURLs addObject:argument];
 			}
 		}
@@ -628,7 +637,12 @@ int main(int argc, const char *argv[]) {
 		RecentActivity *activity = [[RecentActivity alloc] init];
 		// The documents delegate must be installed before the run loop
 		// starts: only then does NSApplication service kAEOpenDocuments
-		// and deliver local documents to application:open:.
+		// and deliver local documents to application:open:. The strong
+		// local keeps it alive for the whole run — NSApplication holds
+		// its delegate weakly, so the stack reference in main() is the
+		// lifetime owner (verified by the open-files harness, which
+		// asserts the installed delegate identity and selector surface
+		// before delivering events).
 		OpenDocumentsDelegate *documents = [[OpenDocumentsDelegate alloc] initWithActivity:activity];
 		application.delegate = documents;
 		EventRedirector *redirector = [[EventRedirector alloc] initWithActivity:activity];

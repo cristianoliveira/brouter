@@ -361,8 +361,9 @@ func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, second := writeFixtureDocs(t, docDir)
+	missing := filepath.Join(docDir, "gone.html")
 
-	run := exec.Command(handlerBin, first, second, "https://example.com/missing")
+	run := exec.Command(handlerBin, first, second, missing, "https://example.com/missing")
 	run.Env = append(os.Environ(), "BRROUTER_HANDLER_LOG="+filepath.Join(stubDir, "handler.log"))
 	if out, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("handler run failed: %v\n%s", err, out)

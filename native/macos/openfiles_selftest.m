@@ -63,10 +63,30 @@ int main(int argc, const char *argv[]) {
 		RecentActivity *activity = [[RecentActivity alloc] initWithCapacity:20];
 		OpenDocumentsDelegate *delegate = [[OpenDocumentsDelegate alloc] initWithActivity:activity];
 
+		// Lifetime: NSApplication holds its delegate weakly, so main()
+		// owns the delegate through its stack reference. Mirror that
+		// wiring here and assert the installed identity.
+		NSApplication *application = [NSApplication sharedApplication];
+		application.delegate = delegate;
+		if (application.delegate != (id<NSApplicationDelegate>)delegate) {
+			return Fail("delegate not installed on NSApplication");
+		}
+
+		// Exact delivery surface: the modern -application:open: (NSURL,
+		// macOS 10.13+) is implemented; the deprecated
+		// -application:openFiles: is NOT, so AppKit has exactly one
+		// dispatch target and a document can never be delivered twice.
+		if (![delegate respondsToSelector:@selector(application:open:)]) {
+			return Fail("application:open: not implemented");
+		}
+		if ([delegate respondsToSelector:@selector(application:openFiles:)]) {
+			return Fail("deprecated application:openFiles: must not be implemented");
+		}
+
 		// Warm-path delivery, exactly what NSApplication does when the
 		// running handler is handed documents: application:open: with
 		// file URLs, potentially several at once.
-		[delegate application:NSApplication.sharedApplication open:@[first, second]];
+		[delegate application:application open:@[first, second]];
 
 		// The shim spawns asynchronously; poll for the stub's log.
 		NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
