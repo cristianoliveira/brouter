@@ -1,7 +1,7 @@
 ---
 id: TASK-0015
 title: Verify and package the first supported release
-status: todo
+status: doing
 depends_on: [TASK-0004, TASK-0005, TASK-0010, TASK-0012, TASK-0013, TASK-0014]
 tags: [release, acceptance]
 ---
@@ -22,6 +22,47 @@ A bounded release candidate has reproducible artifacts and user-facing acceptanc
 
 ## Verification
 Attach command evidence and real-platform acceptance results; list untested combinations as unsupported or pending. Do not infer GUI acceptance from headless tests.
+
+## Bounded release slice (2026-09-16)
+
+All checks below used detached current `origin/main` `401e84b`, temporary HOME/config paths, temporary fake browser/launcher scripts, and no live configuration.
+
+### End-to-end CLI matrix
+
+A temporary four-target config and fake executables verified:
+
+- `validate`: PASS (`config OK: targets 4, rules 3, default "default"`).
+- exact-host, subdomain, URL-regex, and unmatched default routing: PASS; each fake browser received exactly one original URL argument.
+- repeated CLI launches: PASS; two cold process invocations delivered both URLs to the rule-selected target.
+- default-path resolution: PASS with `$HOME/.config/brouter/config.toml` and unset `XDG_CONFIG_HOME`.
+- malformed TOML: PASS as a visible exit 1 with config path/syntax category.
+- missing executable target: PASS as visible exit 1; no fallback.
+- missing known-browser profile: PASS as visible exit 1; no profile creation or fallback.
+
+`go test -vet=off ./scripts -run '^TestOpenFilesRealAppleEventDispatchReachesOpenURLs$' -count=1 -v`: PASS. This is a temporary Apple-event harness, not LaunchServices/default-browser GUI acceptance.
+
+### Quality and security checks
+
+- `go test -race -vet=off ./cmd/brouter ./internal/...`: PASS after removing unrelated exhausted temporary test directories.
+- `make fmt-check`, `make vet`, `make architecture`: PASS.
+- Budgeted coverage from the prior bounded run: cmd/brouter 86.5%, domain 95.8%, config 95.0%: PASS.
+- `GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...`: PASS, `No vulnerabilities found.`
+- `make analyze`: PASS after focused PR #39 (`87d7c20`) removed the only unused `testAppMacOSDir` test helper. The PR changes four test-only lines and no production/native behavior.
+- `nix develop --command make check`: PASS with the pinned golangci-lint 2.13.2 environment. The host shell still has 2.12.2 and is intentionally rejected by the version-drift guard.
+
+### Focused source follow-up
+
+PR #39 (merge `401e84b`; source commit `87d7c20`) is merged into current `main`: https://github.com/cristianoliveira/brouter/pull/39. GitHub's macOS and Ubuntu gates passed. Kelly reviewed the exact source tip and returned PASS. This source fix does not by itself claim release acceptance.
+
+### Temporary artifact/signing evidence
+
+Two `GOOS=darwin GOARCH=arm64 go build -trimpath` CLI builds were byte-identical (SHA-256 `d4f00dd9c568f67ad21d075a423ca1c45bb2bb23e9d59a609b260aa41d279562`). A temporary arm64 app bundle assembled from `native/macos` passed `codesign --verify --deep --strict`; `file` reported both executables as Mach-O arm64. `codesign -dv` reported identifier `com.cristianoliveira.brouter.handler`, `Signature=adhoc`, and `TeamIdentifier=not set`. Temporary SHA-256 manifest output was recorded; no artifact was published.
+
+`nix flake check --no-update-lock-file` and `nix build .#packages.aarch64-darwin.brouter-handler --no-link` also pass. Artifact version stamping, release archive/checksum publication, Developer ID signing/notarization/Gatekeeper transfer, and tags remain unperformed.
+
+### Remaining consent and release gates
+
+Still **UNTESTED**: real browsers/profiles and visible destinations; real LaunchServices cold/warm/repeated delivery; clean-environment install, explicit default selection, update, uninstall/restore; menu-bar/accessibility behavior; multi-platform release matrix; and published versioned artifacts. Exact manual actions require user consent to inspect defaults, install/rebuild/remove, explicitly select/restore the handler, open one fixed benign URL cold and warm, observe the visible browser destination, inspect diagnostics without exposing the URL, and verify clean restore. Do not infer GUI or publication acceptance from these headless/temporary checks. No release or tag was published.
 
 ## Non-goals
 Public release authorization, automatic updates, or expanding the support matrix.
