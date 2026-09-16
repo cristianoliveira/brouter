@@ -20,14 +20,14 @@ A validated `vX.Y.Z` tag runs the pinned release checks and produces determinist
 - [x] Tag-triggered jobs run the normal gate on Linux and macOS plus the release-required formatting, vet, static analysis, race, coverage, vulnerability and architecture checks with pinned tool versions.
 - [x] Build only the supported artifacts: Linux x86_64 and aarch64 CLI archives, macOS arm64 CLI archive, and macOS arm64 app-bundle archive. Intel and other platform artifacts are not produced or implied.
 - [x] Archives have deterministic names and contents, include the validated version, and every downloaded archive is revalidated for safe paths, entry types, required root/VERSION and stamped version before a sorted SHA-256 manifest is generated.
-- [x] CLI and macOS app metadata receive version stamping from the validated tag; local builds remain identifiable as development builds.
+- [x] CLI and macOS app metadata receive version stamping from the validated tag; local `--version` builds identify as `dev-<full VCS revision>` (or `-dirty`), falling back to `dev` when Go build metadata is unavailable.
 - [x] Every checkout disables persisted credentials; repository helpers run before token exposure, and only the final fixed `gh release create` command receives `GH_TOKEN`.
 - [x] Only the final release job has `contents: write`; it creates a DRAFT release with `--verify-tag`, and no workflow step creates tags or publishes releases.
 - [x] Archive, checksum, version, malformed-tag and failure paths have focused local tests; workflow YAML is syntax-checked and tool-validated.
 
 ## Verification
 
-Implemented in `.github/workflows/release.yml`, `scripts/release-artifacts.sh`, and the CLI version stamp. The helper uses `trimpath`, a normalized tar/gzip writer, validated target allowlists, archive-content checks and sorted SHA-256 output. The final job revalidates downloaded archives before manifest generation. macOS app builds reuse `scripts/build-macos-handler.sh` and retain ad-hoc signing.
+Implemented in `.github/workflows/release.yml`, `scripts/release-artifacts.sh`, and the CLI version stamp. Local CLI version resolution uses Go embedded build metadata (`dev-<full revision>` with explicit `-dirty` status); linker-stamped release versions remain unchanged and unavailable metadata falls back to `dev`. Focused tests cover revision-present/absent and Cobra `--version` output. The helper uses `trimpath`, a normalized tar/gzip writer, validated target allowlists, archive-content checks and sorted SHA-256 output. The final job revalidates downloaded archives before manifest generation. macOS app builds reuse `scripts/build-macos-handler.sh` and retain ad-hoc signing.
 
 Automated and package-build evidence is build-only; it does not establish runtime behavior, cross-compiled platform behavior, Developer ID signing, notarization, Gatekeeper transfer, or release approval.
 

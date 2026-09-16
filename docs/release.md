@@ -23,9 +23,13 @@ Only these build-only artifacts are produced:
 
 Each archive contains a `VERSION` file and normalized metadata. The workflow
 checks archive paths and version contents, then adds a sorted `SHA256SUMS`
-manifest. The CLI receives the version through Go linker stamping. The app
-bundle receives the version in `CFBundleShortVersionString` and
-`CFBundleVersion` before its final ad-hoc signature.
+manifest. Release binaries receive the validated version through Go linker
+stamping. Local `--version` output is deterministic: `dev-<full VCS revision>`
+using Go's embedded build metadata, with `-dirty` appended when
+`vcs.modified=true`. If the revision is unavailable (for example, tests or
+source exports), it safely reports `dev`. The app bundle receives the version
+in `CFBundleShortVersionString` and `CFBundleVersion` before its final ad-hoc
+signature.
 
 Cross-compilation and package construction prove only build properties. They
 do not prove runtime behavior, browser/default-handler behavior, GUI behavior,
