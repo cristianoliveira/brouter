@@ -461,7 +461,6 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 - (instancetype)initWithActivity:(RecentActivity *)activity;
 - (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply;
 @end
-
 @implementation EventRedirector {
 	RecentActivity *_activity;
 }
@@ -481,12 +480,56 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 }
 @end
 
+// OpenDocumentsDelegate receives the kAEOpenDocuments Apple Events
+// (TASK-0033): LaunchServices delivers local documents here when the
+// handler is already running (warm path), decoded to file URLs. Every
+// document is forwarded, one spawn per file, with the same redacted
+// logging as URL events. The shim holds no document policy — what may
+// open and how errors surface is entirely brouter's decision.
+@interface OpenDocumentsDelegate : NSObject <NSApplicationDelegate>
+- (instancetype)initWithActivity:(RecentActivity *)activity;
+- (void)application:(NSApplication *)application open:(NSArray<NSURL *> *)urls;
+@end
+
+@implementation OpenDocumentsDelegate {
+	RecentActivity *_activity;
+}
+
+- (instancetype)initWithActivity:(RecentActivity *)activity {
+	if (self = [super init]) {
+		_activity = activity;
+	}
+	return self;
+}
+
+- (void)application:(NSApplication *)application open:(NSArray<NSURL *> *)urls {
+	NSMutableArray<NSString *> *specs = [NSMutableArray array];
+	for (NSURL *url in urls) {
+		NSString *spec = [url absoluteString];
+		if (spec.length > 0) {
+			[specs addObject:spec];
+		}
+	}
+	if (specs.count > 0) {
+		ForwardURLsShim(_activity, @"os-event", specs);
+	}
+}
+
+@end
+
 int main(int argc, const char *argv[]) {
 	@autoreleasepool {
 		NSMutableArray<NSString *> *argvURLs = [NSMutableArray array];
 		for (NSInteger i = 1; i < argc; i++) {
 			NSString *argument = [NSString stringWithUTF8String:argv[i]];
-			if ([argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
+			// Cold launch: web URLs ride argv as before; local documents
+			// arrive as file:// URLs (LaunchServices handoff) or as plain
+			// paths (command line, open -a). Existence here is only a
+			// routing hint — extension and type policy lives in brouter.
+			BOOL isWebURL = [argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"];
+			BOOL isFileURL = [argument hasPrefix:@"file://"];
+			BOOL isFilePath = [[NSFileManager defaultManager] fileExistsAtPath:argument];
+			if (isWebURL || isFileURL || isFilePath) {
 				[argvURLs addObject:argument];
 			}
 		}
@@ -507,6 +550,11 @@ int main(int argc, const char *argv[]) {
 		// Events to the NSAppleEventManager handler.
 		NSApplication *application = [NSApplication sharedApplication];
 		RecentActivity *activity = [[RecentActivity alloc] init];
+		// The documents delegate must be installed before the run loop
+		// starts: only then does NSApplication service kAEOpenDocuments
+		// and deliver local documents to application:open:.
+		OpenDocumentsDelegate *documents = [[OpenDocumentsDelegate alloc] initWithActivity:activity];
+		application.delegate = documents;
 		EventRedirector *redirector = [[EventRedirector alloc] initWithActivity:activity];
 		[[NSAppleEventManager sharedAppleEventManager]
 			setEventHandler:redirector

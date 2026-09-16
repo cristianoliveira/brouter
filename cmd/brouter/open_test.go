@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cristianoliveira/brouter/internal/infra/localfile"
 )
 
 // writeFakeBrowser creates an executable script that records its argv,
@@ -342,4 +344,196 @@ command = [%q]
 		t.Errorf("credentials must never appear: %q", stderr)
 	}
 	_ = stdout
+}
+
+func TestOpenSendsLocalDocumentStraightToTheDefaultBrowser(t *testing.T) {
+	// Given a local document with a browser-viewable extension, when
+	// open runs, the default configured browser receives the correctly
+	// encoded file URL as its one argument — the static rules and the
+	// route_command protocol are never consulted for local files.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`, writeAnsweringScript(t, dir, "fake")))
+
+	doc := writeLocalDocument(t, dir, "my docs/report page #3 – ~100%.html", "<html></html>")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, doc)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	wantURL, err := localfile.Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantURL == "file://"+doc {
+		t.Fatalf("expected encoding for %q", doc)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != wantURL {
+		t.Errorf("browser argv = %q, want exactly the encoded file URL %q", argv, wantURL)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestOpenSendsAFileURLInputToTheDefaultBrowser(t *testing.T) {
+	// Given a file:// URL, when open runs, it is treated as a local
+	// document and encoded canonically before the launch.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	doc := filepath.Join(dir, "deck.pdf")
+	if err := os.WriteFile(doc, []byte("%PDF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "file://"+doc)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "file://"+doc {
+		t.Errorf("browser argv = %q, want the canonical file URL", argv)
+	}
+}
+
+func TestOpenRejectsUnsupportedLocalDocumentsWithRedactedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		prepare  func(dir string) string
+		wantText string
+	}{
+		{
+			name: "missing file",
+			prepare: func(dir string) string {
+				return filepath.Join(dir, "gone.html")
+			},
+			wantText: "does not exist",
+		},
+		{
+			name: "directory",
+			prepare: func(dir string) string {
+				sub := filepath.Join(dir, "bundle.app")
+				if err := os.Mkdir(sub, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return sub
+			},
+			wantText: "not a regular file",
+		},
+		{
+			name: "unsupported extension",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "installer.dmg")
+				if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "not supported",
+		},
+		{
+			name: "executable",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "tool.sh")
+				if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "not supported",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			browser, log := writeFakeBrowser(t, dir, 0)
+			path := writeConfig(t, executableTargetConfig(browser))
+
+			raw := tc.prepare(dir)
+			code, _, stderr := runCapture(t, "", "open", "--config", path, raw)
+
+			if code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(stderr, tc.wantText) {
+				t.Errorf("stderr = %q, want the %q category", stderr, tc.wantText)
+			}
+			if strings.Contains(stderr, dir) {
+				t.Errorf("stderr = %q leaks the input path — diagnostics must stay redacted", stderr)
+			}
+			if _, err := os.Stat(log); !os.IsNotExist(err) {
+				t.Error("a browser process was started for a rejected document")
+			}
+		})
+	}
+}
+
+func TestOpenKeepsHTTPRoutingUntouchedForLocalDocuments(t *testing.T) {
+	// Given the local-document path exists, when an http URL is opened,
+	// the routing behavior is exactly as before: rules and route_command
+	// see web URLs only; local policy never intercepts them.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`, writeAnsweringScript(t, dir, "fake")))
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "https://docs.example/page")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "https://docs.example/page" {
+		t.Errorf("browser argv = %q, want the routed URL", argv)
+	}
+}
+
+// writeAnsweringScript creates an executable route_command script that
+// always answers with the given single-line target.
+func writeAnsweringScript(t *testing.T, dir, answer string) string {
+	t.Helper()
+	script := filepath.Join(dir, "router.sh")
+	body := fmt.Sprintf("#!/bin/sh\nprintf '%s'\n", answer)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// writeLocalDocument creates a file under dir (subdirectories allowed
+// in the name) with the given content and returns its full path.
+func writeLocalDocument(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

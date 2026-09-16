@@ -43,6 +43,34 @@ func Launch(plan Plan, rawURL string, run Runner) error {
 	return nil
 }
 
+// LaunchFile executes the plan with an encoded file URL as one
+// structured argv element. It is the only door for local documents:
+// TASK-0033 routes them straight to the configured browser, after
+// internal/infra/localfile has vetted existence, type, and readability.
+// The validation here is the same last line of defense as Launch's —
+// only a file URL with a non-empty path passes — so web schemes can
+// never enter through the file path.
+func LaunchFile(plan Plan, fileURL string, run Runner) error {
+	parsed, err := url.Parse(fileURL)
+	if err != nil || strings.ToLower(parsed.Scheme) != "file" || parsed.Path == "" {
+		return fmt.Errorf("cannot launch a non-file URL as a local document (input redacted)")
+	}
+	if plan.Executable == "" {
+		return fmt.Errorf("launch plan has no executable")
+	}
+
+	cmd := exec.Command(plan.Executable, append(plan.Args, fileURL)...)
+	cmd.Env = os.Environ()
+
+	if run == nil {
+		run = (*exec.Cmd).Run
+	}
+	if err := run(cmd); err != nil {
+		return fmt.Errorf("browser process failed (%s): %w", plan.Executable, err)
+	}
+	return nil
+}
+
 // validateHTTPURL rejects anything that is not an http or https URL with
 // a host. Error text keeps the URL out of the message when it is empty
 // or unparseable; the caller already has the input.

@@ -337,3 +337,101 @@ func TestMacosHandlerShimResolvesConfigPerContract(t *testing.T) {
 		})
 	}
 }
+
+func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
+	skipUnlessDarwin(t)
+
+	// TASK-0033 cold path: launched with local documents on argv —
+	// LaunchServices handoff or open -a — the shim forwards every file,
+	// one embedded-brouter spawn per file, spaces and unicode intact.
+	// Policy (existence, extension, redacted errors) stays in brouter.
+	app := filepath.Join("..", "dist", "BrouterHandler.app")
+	if _, err := os.Stat(filepath.Join(app, "Contents/MacOS/BrouterHandler")); err != nil {
+		t.Fatalf("bundle not built: %v", err)
+	}
+
+	stubDir := t.TempDir()
+	stubScript := stubBrouterScript(filepath.Join(stubDir, "argv.log"))
+	testApp := assembleTestBundle(t, app, stubDir, stubScript)
+
+	handlerBin := filepath.Join(testApp, "Contents/MacOS/BrouterHandler")
+
+	docDir := filepath.Join(stubDir, "my docs")
+	if err := os.MkdirAll(docDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	first, second := writeFixtureDocs(t, docDir)
+
+	run := exec.Command(handlerBin, first, second, "https://example.com/missing")
+	run.Env = append(os.Environ(), "BRROUTER_HANDLER_LOG="+filepath.Join(stubDir, "handler.log"))
+	if out, err := run.CombinedOutput(); err != nil {
+		t.Fatalf("handler run failed: %v\n%s", err, out)
+	}
+
+	// Three spawns share one append-only log: the per-spawn argv groups
+	// (open, --config, <cfg>, <input>) interleave at line granularity,
+	// so the assertion is set-wise over the forwarded inputs.
+	argv := readArgvFile(t, waitForFile(t, filepath.Join(stubDir, "argv.log")))
+	forwarded := map[string]int{}
+	for _, line := range argv {
+		switch line {
+		case first, second, "https://example.com/missing":
+			forwarded[line]++
+		}
+	}
+	if len(forwarded) != 3 {
+		t.Fatalf("forwarded inputs = %v, want exactly the two documents and the URL", forwarded)
+	}
+	for input, count := range forwarded {
+		if count != 1 {
+			t.Errorf("input %q forwarded %d times, want exactly one spawn per input", input, count)
+		}
+	}
+}
+
+func TestMacosHandlerPlistDeclaresLocalDocumentTypesAsAlternate(t *testing.T) {
+	skipUnlessDarwin(t)
+
+	// TASK-0033 metadata: the bundle claims exactly the document types
+	// brouter accepts, every one at Alternate rank — the handler shows
+	// up in Open With menus without ever becoming a default and without
+	// resetting any user association.
+	plist := filepath.Join("..", "native", "macos", "Info.plist")
+	if out, err := exec.Command("plutil", "-lint", plist).CombinedOutput(); err != nil {
+		t.Fatalf("Info.plist invalid: %v\n%s", err, out)
+	}
+	declared := readFileOrFatal(t, plist)
+
+	for _, contentType := range []string{
+		"public.html", "public.xhtml",
+		"com.adobe.pdf",
+		"public.svg-image",
+		"public.png", "public.jpeg", "com.compuserve.gif", "public.webp", "com.microsoft.bmp",
+		"public.plain-text",
+	} {
+		if !strings.Contains(declared, "<string>"+contentType+"</string>") {
+			t.Errorf("Info.plist does not declare document type %s", contentType)
+		}
+	}
+
+	docTypes := declared[strings.Index(declared, "CFBundleDocumentTypes"):]
+	docTypes = docTypes[:strings.Index(docTypes, "CFBundleURLTypes")]
+	if strings.Count(docTypes, "<string>Alternate</string>") != 10 {
+		t.Errorf("document types ranks = want 10 Alternate entries (never Default/Owner), got %d",
+			strings.Count(docTypes, "<string>Alternate</string>"))
+	}
+}
+
+// writeFixtureDocs creates the shared fixture documents (spaces, a
+// reserved #, and unicode in the names) and returns their paths.
+func writeFixtureDocs(t *testing.T, docDir string) (string, string) {
+	t.Helper()
+	first := filepath.Join(docDir, "report page #3.html")
+	second := filepath.Join(docDir, "deck – übersetzt.pdf")
+	for _, doc := range []string{first, second} {
+		if err := os.WriteFile(doc, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return first, second
+}
