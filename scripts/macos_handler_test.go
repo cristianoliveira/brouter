@@ -192,10 +192,6 @@ func assembleTestBundle(t *testing.T, app, stubDir, stubScript string) string {
 	return testApp
 }
 
-func testAppMacOSDir(stubDir string) string {
-	return filepath.Join(stubDir, "BrouterHandler.app", "Contents/MacOS")
-}
-
 func stubBrouterScript(logPath string) string {
 	return "#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\" >> " + logPath + "\ndone\nexit 0\n"
 }
