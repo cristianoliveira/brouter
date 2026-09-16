@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -78,8 +79,11 @@ type Runner interface {
 // payload to freeze.
 type Commander struct {
 	// Command is the direct argv (executable first); never a shell
-	// string.
+	// string. A relative executable path is resolved from ConfigPath.
 	Command []string
+	// ConfigPath is the selected config's logical path. Its directory is
+	// preferred over the process working directory for relative paths.
+	ConfigPath string
 	// Runner spawns the process; defaults to the exec-based runner.
 	Runner Runner
 }
@@ -101,12 +105,50 @@ func (c *Commander) Decide(ctx context.Context, rawURL string) (Result, error) {
 		c.Runner = execRunner{}
 	}
 
-	stdout, err := c.Runner.Run(ctx, c.Command, append([]byte(fields.Original), '\n'))
+	command, err := resolveCommand(c.Command, c.ConfigPath)
+	if err != nil {
+		return Result{}, err
+	}
+	stdout, err := c.Runner.Run(ctx, command, append([]byte(fields.Original), '\n'))
 	if err != nil {
 		return Result{}, err // fixed category errors from the runner
 	}
 
 	return decodeDecision(stdout)
+}
+
+// resolveCommand keeps direct argv semantics while making explicit relative
+// executable paths independent of the process working directory. The config
+// path is intentionally kept logical: when it is a symlink, ./route.py is
+// resolved beside that symlink, where a colocated route.py symlink can point
+// at the mutable script. Bare commands and absolute paths retain exec.LookPath
+// and direct-path behavior respectively. No shell, tilde, or environment
+// expansion is performed.
+func resolveCommand(command []string, configPath string) ([]string, error) {
+	if len(command) == 0 {
+		return nil, ErrCommandUnavailable
+	}
+
+	resolved := append([]string(nil), command...)
+	executable := resolved[0]
+	if filepath.IsAbs(executable) || isBareCommand(executable) {
+		return resolved, nil
+	}
+	if configPath == "" {
+		return nil, ErrCommandUnavailable
+	}
+
+	configPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, ErrCommandUnavailable
+	}
+	resolved[0] = filepath.Join(filepath.Dir(configPath), executable)
+	return resolved, nil
+}
+
+func isBareCommand(executable string) bool {
+	return filepath.VolumeName(executable) == "" &&
+		!strings.ContainsAny(executable, `/\\`)
 }
 
 // contractURL applies the URL acceptance rules shared with the static

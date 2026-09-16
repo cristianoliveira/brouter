@@ -11,9 +11,15 @@ URL on stdin, and reads back a single-line decision.
 command = ["/path/to/my-router", "--flag"]
 ```
 
-The command is an argv array: the first element is the executable
-(absolute path, or resolved via `$PATH` at first use). Configs without
-this section behave exactly as before.
+The command is an argv array: the first element is the executable.
+Absolute paths are used directly, and bare names are resolved via `$PATH`
+at first use. Explicit relative paths such as `./route.py` resolve from
+the selected config file's logical directory, not the process working
+directory. This remains true when the config is a symlink, so a
+colocated `route.py` symlink can point to a mutable script beside the
+tracked config. Arguments are passed unchanged; there is no shell, tilde,
+or environment-variable expansion. Configs without this section behave
+exactly as before.
 
 ## Protocol (v1)
 
