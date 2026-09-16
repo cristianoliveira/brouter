@@ -479,11 +479,30 @@ func TestMacosHandlerPlistDeclaresLocalDocumentTypesAsAlternate(t *testing.T) {
 		t.Error("Info.plist declares public.plain-text, whose conformance set exceeds the .txt allowlist")
 	}
 
+	// CFBundleTypeExtensions must pin every declared UTI to exactly the
+	// CLI allowlist's extensions. The one-directional gap is deliberate:
+	// .txt stays accepted by the CLI but unadvertised, because its UTI
+	// over-conforms (markdown) — metadata may advertise less than the
+	// CLI accepts, never more.
+	for _, ext := range []string{
+		"html", "htm", "xhtml",
+		"pdf", "svg",
+		"png", "jpg", "jpeg", "gif", "webp", "bmp",
+	} {
+		if !strings.Contains(declared, "<string>"+ext+"</string>") {
+			t.Errorf("Info.plist does not declare extension %s", ext)
+		}
+	}
+
 	docTypes := declared[strings.Index(declared, "CFBundleDocumentTypes"):]
 	docTypes = docTypes[:strings.Index(docTypes, "CFBundleURLTypes")]
 	if strings.Count(docTypes, "<string>Alternate</string>") != 9 {
 		t.Errorf("document types ranks = want 9 Alternate entries (never Default/Owner), got %d",
 			strings.Count(docTypes, "<string>Alternate</string>"))
+	}
+	if strings.Count(docTypes, "CFBundleTypeExtensions") != 9 {
+		t.Errorf("document types extension arrays = %d, want 9 (one per declared type)",
+			strings.Count(docTypes, "CFBundleTypeExtensions"))
 	}
 }
 
