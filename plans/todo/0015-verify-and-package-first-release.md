@@ -64,6 +64,10 @@ Two `GOOS=darwin GOARCH=arm64 go build -trimpath` CLI builds were byte-identical
 
 Still **UNTESTED**: real browsers/profiles and visible destinations; real LaunchServices cold/warm/repeated delivery; clean-environment install, explicit default selection, update, uninstall/restore; menu-bar/accessibility behavior; multi-platform release matrix; and published versioned artifacts. Exact manual actions require user consent to inspect defaults, install/rebuild/remove, explicitly select/restore the handler, open one fixed benign URL cold and warm, observe the visible browser destination, inspect diagnostics without exposing the URL, and verify clean restore. Do not infer GUI or publication acceptance from these headless/temporary checks. No release or tag was published.
 
+## Relevant USER-ATTESTED evidence (2026-09-16)
+
+The user reports that the installed handler opened a harmless web URL, an HTML document, and a PDF in the intended browser, observed menu activity, and used Quit. This complements the bounded checks above but does not close the release task: the full release matrix, clean-environment lifecycle, defaults, signing/Gatekeeper transfer, and publication remain unverified.
+
 ## Non-goals
 Public release authorization, automatic updates, or expanding the support matrix.
 

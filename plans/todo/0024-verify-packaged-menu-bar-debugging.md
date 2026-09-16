@@ -24,5 +24,18 @@ The source-built and Nix-packaged Apple Silicon app expose the same small menu/d
 ## Verification
 Kelly reports exact revision and actual GUI observations; user attestation is sufficient for their own session. Separate passing automated/package checks from unavailable graphical evidence. Use a short manual checklist, not another probe framework. Report untested cases honestly; a docs PR merge alone does not close acceptance.
 
+## USER-ATTESTED evidence (2026-09-16)
+
+The user reports that the installed handler opened a harmless web URL, an HTML document, and a PDF in the intended browser, observed menu activity, and used Quit. This is session-specific user evidence, not agent-observed evidence. It supports intended-browser destination observations for those three opens and a Quit interaction only; it does not attest the remaining acceptance criteria.
+
+## Remaining unverified
+
+- Light/dark appearance, accessible label, keyboard navigation, one item per running instance, unwanted focus, and Dock behavior.
+- Cold-versus-warm sequencing, repeated URL delivery while the menu is open, ordered activity entries, and foreground-child lifetime; the user did not assert these details.
+- Relaunch behavior or distinction between app-running state and default-handler selection.
+- Isolated directly observed preflight/spawn failures, clear/retention behavior, missing config/log reveal behavior, and downstream config/browser failure presentation.
+- Source-bundle/Nix-package parity, required icon assets, arm64 binaries, final signature and metadata/eligibility checks.
+- CLI regression behavior and Linux packaging checks.
+
 ## Non-goals
 Nix-darwin system activation/removal retest, changing defaults, login items, Intel support, Linux UI, automatic installation, or private browsing-history capture.
