@@ -28,6 +28,9 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the gate contract, the pinned lint
 rule set, and the toolchain policy, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for package boundaries.
 
+For a safe, self-contained Python route command, see
+[examples/python-route-command](examples/python-route-command).
+
 ## Supported platforms (planned)
 
 - NixOS with Nix-installed browsers on Sway (Wayland)
