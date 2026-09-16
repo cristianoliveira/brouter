@@ -1,0 +1,171 @@
+# A validated vX.Y.Z tag runs the pinned release checks and builds only the
+# supported artifacts. The final job creates a DRAFT release; it never creates
+# tags or publishes a release.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - id: tag
+        name: Validate release tag before using it
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="$(bash scripts/release-artifacts.sh validate-tag "$tag")"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: validate-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Install pinned golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+      - name: Put the pinned linter on PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: Normal gate
+        run: make check
+
+  advanced-checks:
+    needs: [validate-tag, checks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Install pinned golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+      - name: Put the pinned linter on PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: Formatting
+        run: make fmt-check
+      - name: Static analysis
+        run: make vet && make analyze
+      - name: Race and coverage budgets
+        run: make race && make coverage
+      - name: Vulnerability scan
+        run: make security
+      - name: Architecture boundaries
+        run: make architecture
+
+  linux-artifacts:
+    needs: [validate-tag, advanced-checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            label: x86_64
+          - goarch: arm64
+            label: aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Build supported Linux CLI artifact
+        env:
+          RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+          TARGET: linux-${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release"
+          bash scripts/release-artifacts.sh build "$RELEASE_TAG" "$TARGET" "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-linux-${{ matrix.label }}
+          path: ${{ runner.temp }}/release/*.tar.gz
+          if-no-files-found: error
+
+  macos-artifacts:
+    needs: [validate-tag, advanced-checks]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.27.1'
+      - name: Build supported macOS arm64 CLI and app artifacts
+        env:
+          RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release"
+          bash scripts/release-artifacts.sh build "$RELEASE_TAG" darwin-arm64 "$RUNNER_TEMP/release"
+          bash scripts/release-artifacts.sh build "$RELEASE_TAG" darwin-handler-arm64 "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos-arm64
+          path: ${{ runner.temp }}/release/*.tar.gz
+          if-no-files-found: error
+
+  draft-release:
+    needs: [validate-tag, linux-artifacts, macos-artifacts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: release-downloads
+      - name: Validate archives and generate SHA256 manifest
+        env:
+          RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find release-downloads -type f -name '*.tar.gz' -exec cp {} release/ \;
+          bash scripts/release-artifacts.sh verify "$RELEASE_TAG" release
+          bash scripts/release-artifacts.sh manifest "$RELEASE_TAG" release
+          printf 'Brouter %s\n\nGenerated by the pinned release workflow.\n\nArtifacts are build-only evidence for the supported targets; runtime, signing transfer, notarization, and Gatekeeper acceptance remain separate.\n' "$RELEASE_TAG" > release-notes.md
+      - name: Create draft release without creating a tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release/* \
+            --draft \
+            --verify-tag \
+            --title "Brouter $RELEASE_TAG" \
+            --notes-file release-notes.md

@@ -15,6 +15,18 @@ fi
 command -v clang >/dev/null 2>&1 || { echo "clang is required (xcode-select --install or nix develop)" >&2; exit 1; }
 command -v go >/dev/null 2>&1 || { echo "go is required" >&2; exit 1; }
 
+# Release builds set RELEASE_VERSION after validating the Git tag. Keeping
+# the validation here makes this helper safe when called outside CI too.
+version="${RELEASE_VERSION:-dev}"
+if [[ "$version" != "dev" && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	echo "refusing: RELEASE_VERSION must be dev or X.Y.Z" >&2
+	exit 1
+fi
+build_flags=()
+if [[ "$version" != "dev" ]]; then
+	build_flags=(-ldflags "-X main.version=$version")
+fi
+
 app="dist/BrouterHandler.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
@@ -25,7 +37,11 @@ mkdir -p "$app/Contents/MacOS"
 target_arch="arm64"
 
 echo "== building embedded brouter ($target_arch)"
-GOOS=darwin GOARCH=$target_arch go build -o "$app/Contents/MacOS/brouter" ./cmd/brouter
+if [[ "$version" == "dev" ]]; then
+	GOOS=darwin GOARCH=$target_arch go build -o "$app/Contents/MacOS/brouter" ./cmd/brouter
+else
+	GOOS=darwin GOARCH=$target_arch go build "${build_flags[@]}" -o "$app/Contents/MacOS/brouter" ./cmd/brouter
+fi
 
 echo "== building native event shim ($target_arch)"
 clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreServices -framework AppKit \
@@ -35,6 +51,13 @@ clang -arch $target_arch -fobjc-arc -framework Foundation -framework CoreService
 	echo "== assembling bundle metadata"
 mkdir -p "$app/Contents/Resources"
 cp native/macos/Info.plist "$app/Contents/Info.plist"
+if [[ "$version" != "dev" ]]; then
+	# Both values are part of the bundle's deterministic release metadata;
+	# signing happens after this final metadata mutation.
+	bundle_build="${version//./}"
+	plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
+	plutil -replace CFBundleVersion -string "$bundle_build" "$app/Contents/Info.plist"
+fi
 # User-selected menu icon (TASK-0026 candidate C): 1x/2x template
 # monochrome PNGs; see docs/assets/menu-bar-icon-previews/.
 cp native/macos/menu-icon.png "$app/Contents/Resources/menu-icon.png"
@@ -43,5 +66,5 @@ cp native/macos/menu-icon@2x.png "$app/Contents/Resources/menu-icon@2x.png"
 echo "== ad-hoc signing (unsigned binaries are refused by LaunchServices)"
 codesign --force --sign - "$app" >/dev/null
 
-echo "built $app"
+echo "built $app (version $version)"
 echo "note: ad-hoc signature; see docs/macos-handler.md before distributing"

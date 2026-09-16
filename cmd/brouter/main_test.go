@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -45,6 +46,88 @@ func runCapture(t *testing.T, stdin string, args ...string) (int, string, string
 	var stdout, stderr bytes.Buffer
 	code := run(args, strings.NewReader(stdin), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
+}
+
+func TestVersionFlagShowsBuildVersion(t *testing.T) {
+	// Given a linker-stamped release version, when --version is requested, it
+	// prints only that version and performs no project I/O.
+	originalVersion := version
+	version = "1.2.3"
+	t.Cleanup(func() { version = originalVersion })
+
+	code, stdout, stderr := runCapture(t, "", "--version")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if stdout != "1.2.3\n" {
+		t.Errorf("stdout = %q, want %q", stdout, "1.2.3\n")
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestVersionFlagShowsResolvedDevelopmentVersion(t *testing.T) {
+	// Given VCS build metadata, when --version is requested by a dev build, it
+	// includes the full revision and makes a dirty tree explicit.
+	originalVersion := version
+	originalReadBuildInfo := readBuildInfo
+	version = "dev"
+	revision := strings.Repeat("a", 40)
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: revision},
+			{Key: "vcs.modified", Value: "true"},
+		}}, true
+	}
+	t.Cleanup(func() {
+		version = originalVersion
+		readBuildInfo = originalReadBuildInfo
+	})
+
+	code, stdout, stderr := runCapture(t, "", "--version")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if stdout != "dev-"+revision+"-dirty\n" {
+		t.Errorf("stdout = %q, want resolved development version", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty", stderr)
+	}
+}
+
+func TestDevelopmentVersionFallsBackWithoutRevision(t *testing.T) {
+	revision := strings.Repeat("b", 40)
+	for _, test := range []struct {
+		name string
+		info *debug.BuildInfo
+		ok   bool
+		want string
+	}{
+		{
+			name: "revision present and clean",
+			info: &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: revision}, {Key: "vcs.modified", Value: "false"}}},
+			ok:   true,
+			want: "dev-" + revision,
+		},
+		{
+			name: "metadata has no revision",
+			info: &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.modified", Value: "false"}}},
+			ok:   true,
+			want: "dev",
+		},
+		{name: "metadata unavailable", ok: false, want: "dev"},
+		{name: "metadata absent", info: nil, ok: true, want: "dev"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := developmentVersion(test.info, test.ok); got != test.want {
+				t.Errorf("developmentVersion() = %q, want %q", got, test.want)
+			}
+		})
+	}
 }
 
 func TestHelpInvocationShowsUsage(t *testing.T) {
