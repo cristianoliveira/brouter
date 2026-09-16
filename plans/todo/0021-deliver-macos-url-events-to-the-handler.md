@@ -22,5 +22,11 @@ The installed macOS URL-handler process stays alive but ordinary LaunchServices 
 - [ ] Preserve current config-path semantics, embedded executable resolution, and visible failure logging; do not add routing logic or browser/default registration.
 - [ ] Verify with pinned macOS build/tests and a benign fixed URL; document any host-only or GUI evidence limitations honestly.
 
+## Verification
+
+Merged PR #25 (`9ce31a6`) added `NSApplication` initialization, the application event loop, URL-free handler logging, and focused Apple-event coverage. On current `origin/main` `be0ccc3`, focused handler/event tests pass with temporary HOME/config paths, including warm forwarding, real Apple-event dispatch through the test harness, mixed URL/document batches, and privacy-safe diagnostics.
+
+Still **UNTESTED** as GUI acceptance: a user-selected/registered installed handler receiving a real LaunchServices `open -a` event in the user's graphical session, cold and warm visible browser destinations, and behavior across a real launchd environment. Manual consent checklist: inspect defaults without writing; use a copied temporary bundle only (or explicitly approve an installed bundle), open a fixed benign URL cold and warm, inspect the forwarding log for receipt without the raw URL, verify the browser destination, then quit gracefully. No defaults, registration, installation, or live config was touched by this reconciliation.
+
 ## Notes
-Observed baseline on the real host: `/Applications/BrouterHandler.app` stays alive and strict codesign passes, but `/usr/bin/open -a` with `https://example.com/brouter-fixed-check` returned LaunchServices timeout `-1712` and added no forwarding log line. Current `main.m` registers `NSAppleEventManager` then runs `NSRunLoop` without initializing `NSApplication`. Existing logs include raw URL text and must be redacted in this focused fix.
+Historical baseline before PR #25: `/Applications/BrouterHandler.app` stayed alive and strict codesign passed, but `/usr/bin/open -a` with `https://example.com/brouter-fixed-check` returned LaunchServices timeout `-1712` and added no forwarding log line. The pre-fix shim registered `NSAppleEventManager` then ran `NSRunLoop` without initializing `NSApplication`; its logs also included raw URL text. PR #25 addresses that baseline.

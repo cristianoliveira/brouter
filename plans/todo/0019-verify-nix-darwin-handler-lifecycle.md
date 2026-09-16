@@ -25,5 +25,11 @@ A real Apple Silicon nix-darwin installation has bounded evidence for installati
 ## Verification
 Use a short fixed-URL manual checklist, no new stateful probe framework. Report each case passed, failed or untested; request user assistance only when the actual nix-darwin session is unavailable. Mock/CI success is not graphical lifecycle evidence. Fix concrete failures in the relevant packaging/docs PR; do not count PR merge alone as acceptance.
 
+## Bounded acceptance evidence (2026-09-16)
+
+Current `origin/main` `be0ccc3` was checked non-mutatingly with temporary HOME/config paths. `nix flake check --no-update-lock-file` and no-link `nix build .#packages.aarch64-darwin.brouter-handler` pass; focused macOS bundle, config-path, wrapper, and forwarding tests pass. No `darwin-rebuild`, install, `lsregister`, defaults write, or live-config operation was run.
+
+Still **UNTESTED**: actual nix-darwin activation/link discovery, LaunchServices registration, default selection, cold/warm browser destination, changed-store-path update, and safe removal/restore. Exact user-consent checklist: record defaults; run `darwin-rebuild switch` with the user's flake; inspect the generated Applications link and new store path; explicitly select the handler; open a fixed benign URL cold/warm and verify the visible destination; rebuild at a changed revision; verify the new embedded binary; restore the prior default; remove through declarative config; rebuild; verify ordinary links. Do not manually delete store paths.
+
 ## Non-goals
 Intel validation, profile re-certification, notarization, automatic default restoration logic or destructive garbage-collection experiments.

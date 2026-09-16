@@ -24,5 +24,11 @@ The source-built and Nix-packaged Apple Silicon app expose the same small menu/d
 ## Verification
 Kelly reports exact revision and actual GUI observations; user attestation is sufficient for their own session. Separate passing automated/package checks from unavailable graphical evidence. Use a short manual checklist, not another probe framework. Report untested cases honestly; a docs PR merge alone does not close acceptance.
 
+## Bounded acceptance evidence (2026-09-16)
+
+Against current `origin/main` `be0ccc3`, temporary-HOME focused tests pass for bundle reproducibility, arm64 targeting, metadata, menu presence, quit behavior, activity retention/clear, failure diagnostics, local documents, Apple-event harnesses, and Linux wrapper regression. `nix flake check` and no-link `aarch64-darwin` package build pass. No install, LaunchServices registration, defaults write, or real-config mutation was performed.
+
+Still **UNTESTED**: visible menu-bar light/dark rendering, Accessibility label/keyboard navigation, instance count/Dock/focus behavior, visible Recent Activity interaction, Finder reveal click-through, real browser destination, update/remove lifecycle, and user-selected default handling. Exact user-consent checklist: explicitly run a copied or installed bundle; inspect the menu in light and dark modes; verify label/navigation/instances; open a fixed benign URL cold/warm; inspect activity and Clear/Reveal actions; exercise Quit/relaunch; inspect defaults before/after; and remove/restore only through the user's chosen declarative workflow. Do not infer GUI acceptance from these automated results.
+
 ## Non-goals
 Nix-darwin system activation/removal retest, changing defaults, login items, Intel support, Linux UI, automatic installation, or private browsing-history capture.

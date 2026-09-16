@@ -23,6 +23,12 @@ A bounded release candidate has reproducible artifacts and user-facing acceptanc
 ## Verification
 Attach command evidence and real-platform acceptance results; list untested combinations as unsupported or pending. Do not infer GUI acceptance from headless tests.
 
+## Bounded acceptance evidence (2026-09-16)
+
+Against detached current `origin/main` `be0ccc3`, with temporary HOME/XDG paths and no live configuration: non-script Go tests pass; focused CLI, routing, config, local-file, handler, wrapper, activity, menu, and packaging tests pass; formatting, vet, architecture, coverage floors for budgeted packages, `nix flake check`, and no-link `aarch64-darwin` package build pass. The repository's full race/coverage scripts are tooling-limited because the installed golangci-lint was built with Go 1.25 while the module targets Go 1.27; no source failure was inferred from that mismatch.
+
+Still **UNTESTED**: full release matrix across real browsers/profiles and repeated real OS delivery on all supported platforms, clean-environment install/uninstall, versioned artifact publication/checksums, signing transfer/Gatekeeper, and user-selected defaults. Manual acceptance requires explicit user consent to inspect defaults, install/rebuild/remove the package, select/restore the handler, open a fixed benign URL cold and warm, and inspect visible browser destinations. No release or tag was published.
+
 ## Non-goals
 Public release authorization, automatic updates, or expanding the support matrix.
 
