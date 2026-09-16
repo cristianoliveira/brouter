@@ -423,17 +423,25 @@ func TestMacosHandlerPlistDeclaresLocalDocumentTypesAsAlternate(t *testing.T) {
 		"com.adobe.pdf",
 		"public.svg-image",
 		"public.png", "public.jpeg", "com.compuserve.gif", "public.webp", "com.microsoft.bmp",
-		"public.plain-text",
 	} {
 		if !strings.Contains(declared, "<string>"+contentType+"</string>") {
 			t.Errorf("Info.plist does not declare document type %s", contentType)
 		}
 	}
 
+	// public.plain-text must stay UNDECLARED: its conformance set is
+	// broader than the CLI's .txt allowlist (markdown conforms to it on
+	// older systems), so advertising it would offer documents brouter
+	// rejects. Metadata may advertise less than the CLI accepts — never
+	// more.
+	if strings.Contains(declared, "public.plain-text") {
+		t.Error("Info.plist declares public.plain-text, whose conformance set exceeds the .txt allowlist")
+	}
+
 	docTypes := declared[strings.Index(declared, "CFBundleDocumentTypes"):]
 	docTypes = docTypes[:strings.Index(docTypes, "CFBundleURLTypes")]
-	if strings.Count(docTypes, "<string>Alternate</string>") != 10 {
-		t.Errorf("document types ranks = want 10 Alternate entries (never Default/Owner), got %d",
+	if strings.Count(docTypes, "<string>Alternate</string>") != 9 {
+		t.Errorf("document types ranks = want 9 Alternate entries (never Default/Owner), got %d",
 			strings.Count(docTypes, "<string>Alternate</string>"))
 	}
 }

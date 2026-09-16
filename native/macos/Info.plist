@@ -157,20 +157,13 @@
 				<string>com.microsoft.bmp</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Plain text document</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSTypeIsPackage</key>
-			<integer>0</integer>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.plain-text</string>
-			</array>
-		</dict>
+		<!-- The plain-text UTI is deliberately NOT declared: its
+		     conformance set is broader than the CLI's .txt allowlist
+		     (markdown conforms to it on older systems), so advertising
+		     it would offer files brouter rejects. Metadata must never
+		     advertise inputs the CLI refuses; the reverse direction —
+		     the CLI accepting more than is advertised (.txt here) —
+		     is the safe one. -->
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
