@@ -43,13 +43,13 @@ The first authorized tag run completed successfully from `main`:
 
 Downloaded assets were inspected: `sha256sum -c SHA256SUMS` passed; every archive contained its expected target root, executable or app payload, and `VERSION` set to `0.1.0`; and the manifest contained sorted checksums for all four archives. The macOS workflow log records ad-hoc signing and the app archive contains the code-signature resources plus `CFBundleShortVersionString=0.1.0` and `CFBundleVersion=010`. After draft inspection, publication was explicit and manual outside the workflow; the current release is published (`isDraft=false`, `publishedAt=2026-09-16T18:48:36Z`) at [v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/v0.1.0). No tag mutation was performed.
 
-No protected `v*` tag ruleset was found through the repository API, and no repository settings were changed. Publication, production signing/notarization, runtime GUI, browser, and nix-darwin acceptance remain separate gates in TASK-0015, TASK-0019, and TASK-0024.
+No protected `v*` tag ruleset was found through the repository API, and no repository settings were changed. Publication of `v0.1.0` is verified above; production signing/notarization, runtime GUI, browser, and nix-darwin acceptance remain separate gates in TASK-0015, TASK-0019, and TASK-0024. Future releases still require explicit/manual publication approval.
 
 ## Remaining gates
 
 - Configure protected `v*` tag rules so only authorized maintainers can create, move, or delete release tags before any future release; this task does not change repository settings.
 - Keep real-platform GUI, browser/default-handler, install/update/remove/restore and nix-darwin lifecycle acceptance in TASK-0015, TASK-0019 and TASK-0024.
-- Developer ID signing, notarization, Gatekeeper transfer, publication, and a full release matrix remain unverified and out of scope.
+- Developer ID signing, notarization, Gatekeeper transfer, and a full release matrix remain unverified and out of scope; future release publication remains an explicit/manual approval step.
 
 ## Non-goals
 
