@@ -3,7 +3,7 @@
 configuration — separate work and personal contexts without hand-editing GUI
 settings or guessing why a rule matched.
 
-<img width="50" height="50" align="right" alt="candidate-c-ascending-stem" src="https://github.com/user-attachments/assets/23b87651-02e3-44ec-beb0-c285b3a8e54b" />
+<img width="50" height="50" align="right" alt="brouter logo" src="docs/assets/readme-logo.svg" />
 
 ## Open a URL
 
