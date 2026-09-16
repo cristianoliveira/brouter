@@ -193,3 +193,47 @@ func TestLaunchCarriesProfileArgumentBeforeURL(t *testing.T) {
 		t.Errorf("argv = %q, want profile argument then URL as separate elements", lines)
 	}
 }
+
+func TestLaunchFilePassesEncodedFileURLAsOneArgument(t *testing.T) {
+	// Given a browser plan and a correctly encoded file URL, when
+	// launching, the URL arrives as one structured argv element and the
+	// process starts exactly once.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	browser := writeFakeBrowser(t, dir, log, 0)
+
+	fileURL := "file:///tmp/my docs/report%20%E2%80%93%20%233.html"
+	plan := Plan{Executable: browser, Detail: "test"}
+	if err := LaunchFile(plan, fileURL, nil); err != nil {
+		t.Fatalf("LaunchFile() error = %v", err)
+	}
+
+	lines := readLines(t, log)
+	if len(lines) != 2 || lines[0] != fileURL || lines[1] != "argc=1" {
+		t.Errorf("argv log = %q, want the URL alone as argc=1", lines)
+	}
+}
+
+func TestLaunchFileRejectsNonFileSchemesBeforeExecuting(t *testing.T) {
+	// Given anything that is not a file URL, when launching through the
+	// file path, it is rejected before any process starts. The http(s)
+	// gate of Launch stays the only door for web URLs.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	browser := writeFakeBrowser(t, dir, log, 0)
+
+	plan := Plan{Executable: browser, Detail: "test"}
+	for _, raw := range []string{
+		"https://example.com/x",
+		"ftp://example.com/x",
+		"",
+		"not a url",
+	} {
+		if err := LaunchFile(plan, raw, nil); err == nil {
+			t.Errorf("LaunchFile(%q) succeeded, want rejection", raw)
+		}
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a process was started for a rejected input")
+	}
+}

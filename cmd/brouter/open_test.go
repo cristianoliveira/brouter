@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cristianoliveira/brouter/internal/infra/localfile"
 )
 
 // writeFakeBrowser creates an executable script that records its argv,
@@ -342,4 +344,333 @@ command = [%q]
 		t.Errorf("credentials must never appear: %q", stderr)
 	}
 	_ = stdout
+}
+
+func TestOpenSendsLocalDocumentStraightToTheDefaultBrowser(t *testing.T) {
+	// Given a local document with a browser-viewable extension, when
+	// open runs, the default configured browser receives the correctly
+	// encoded file URL as its one argument — the static rules and the
+	// route_command protocol are never consulted for local files.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`, writeAnsweringScript(t, dir, "fake")))
+
+	doc := writeLocalDocument(t, dir, "my docs/report page #3 – ~100%.html", "<html></html>")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, doc)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	wantURL, err := localfile.Resolve(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantURL == "file://"+doc {
+		t.Fatalf("expected encoding for %q", doc)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != wantURL {
+		t.Errorf("browser argv = %q, want exactly the encoded file URL %q", argv, wantURL)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestOpenSendsAFileURLInputToTheDefaultBrowser(t *testing.T) {
+	// Given a file:// URL, when open runs, it is treated as a local
+	// document and encoded canonically before the launch.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	doc := filepath.Join(dir, "deck.pdf")
+	if err := os.WriteFile(doc, []byte("%PDF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "file://"+doc)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "file://"+doc {
+		t.Errorf("browser argv = %q, want the canonical file URL", argv)
+	}
+}
+
+func TestOpenRejectsUnsupportedLocalDocumentsWithRedactedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		prepare  func(dir string) string
+		wantText string
+	}{
+		{
+			name: "missing file",
+			prepare: func(dir string) string {
+				return filepath.Join(dir, "gone.html")
+			},
+			wantText: "does not exist",
+		},
+		{
+			name: "directory",
+			prepare: func(dir string) string {
+				sub := filepath.Join(dir, "bundle.app")
+				if err := os.Mkdir(sub, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return sub
+			},
+			wantText: "not a regular file",
+		},
+		{
+			name: "unsupported extension",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "installer.dmg")
+				if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "not supported",
+		},
+		{
+			name: "script extension",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "tool.sh")
+				if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "not supported",
+		},
+		{
+			name: "executable document",
+			prepare: func(dir string) string {
+				p := filepath.Join(dir, "report.html")
+				if err := os.WriteFile(p, []byte("<html></html>"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			wantText: "executable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			browser, log := writeFakeBrowser(t, dir, 0)
+			path := writeConfig(t, executableTargetConfig(browser))
+
+			raw := tc.prepare(dir)
+			code, _, stderr := runCapture(t, "", "open", "--config", path, raw)
+
+			if code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(stderr, tc.wantText) {
+				t.Errorf("stderr = %q, want the %q category", stderr, tc.wantText)
+			}
+			if strings.Contains(stderr, dir) {
+				t.Errorf("stderr = %q leaks the input path — diagnostics must stay redacted", stderr)
+			}
+			if _, err := os.Stat(log); !os.IsNotExist(err) {
+				t.Error("a browser process was started for a rejected document")
+			}
+		})
+	}
+}
+
+func TestOpenKeepsHTTPRoutingUntouchedForLocalDocuments(t *testing.T) {
+	// Given the local-document path exists, when an http URL is opened,
+	// the routing behavior is exactly as before: rules and route_command
+	// see web URLs only; local policy never intercepts them.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser)+fmt.Sprintf(`
+[[rules]]
+name = "docs"
+matcher = "exact-host"
+pattern = "docs.example"
+target = "fake"
+
+[route_command]
+command = [%q]
+`, writeAnsweringScript(t, dir, "fake")))
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, "https://docs.example/page")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 1 || argv[0] != "https://docs.example/page" {
+		t.Errorf("browser argv = %q, want the routed URL", argv)
+	}
+}
+
+// writeAnsweringScript creates an executable route_command script that
+// always answers with the given single-line target.
+func writeAnsweringScript(t *testing.T, dir, answer string) string {
+	t.Helper()
+	script := filepath.Join(dir, "router.sh")
+	body := fmt.Sprintf("#!/bin/sh\nprintf '%s'\n", answer)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// writeLocalDocument creates a file under dir (subdirectories allowed
+// in the name) with the given content and returns its full path.
+func writeLocalDocument(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestOpenBatchesLocalDocumentsAllOrNothing(t *testing.T) {
+	// Given several valid local documents, when open runs with them all,
+	// the default browser launches once per document, each with its
+	// encoded file URL as the sole argument.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	first := writeLocalDocument(t, dir, "my docs/a report.html", "<html></html>")
+	second := writeLocalDocument(t, dir, "deck.pdf", "%PDF")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, first, second)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
+	}
+	wantFirst, err := localfile.Resolve(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSecond, err := localfile.Resolve(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := readArgvLog(t, log)
+	if len(argv) != 2 || argv[0] != wantFirst || argv[1] != wantSecond {
+		t.Errorf("browser argv = %q, want one encoded launch per document (%q, %q)", argv, wantFirst, wantSecond)
+	}
+	if !strings.Contains(stdout, "launched: fake") {
+		t.Errorf("stdout = %q, want a launched report", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want empty on success", stderr)
+	}
+}
+
+func TestOpenRejectsTheWholeBatchWhenOneDocumentFailsPreflight(t *testing.T) {
+	// Given a mixed batch where one document is missing, when open runs,
+	// the whole batch is rejected before any browser starts: valid files
+	// never launch alongside a failed one.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	good := writeLocalDocument(t, dir, "good.html", "<html></html>")
+	missing := filepath.Join(dir, "gone.pdf")
+
+	code, _, stderr := runCapture(t, "", "open", "--config", path, good, missing)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "does not exist") {
+		t.Errorf("stderr = %q, want the missing-document category", stderr)
+	}
+	if strings.Contains(stderr, dir) {
+		t.Errorf("stderr = %q leaks input paths — diagnostics must stay redacted", stderr)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a browser process started despite a failed preflight")
+	}
+}
+
+func TestOpenMixedFileAndURLArgumentsIsAUsageError(t *testing.T) {
+	// The OS never mixes documents and URLs in one event; a command
+	// line that does is rejected as usage rather than guessed.
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	path := writeConfig(t, executableTargetConfig(browser))
+
+	doc := writeLocalDocument(t, dir, "good.html", "<html></html>")
+
+	code, _, _ := runCapture(t, "", "open", "--config", path, doc, "https://example.com/x")
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want the usage code 2", code)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Error("a browser process started for a usage error")
+	}
+}
+
+func TestOpenBatchDispatchIsPartialAfterPreflightWhenABrowserFails(t *testing.T) {
+	// The honest contract: preflight is all-or-nothing, dispatch is
+	// not. Given a batch where the browser succeeds on the first
+	// document and fails on the second, the first browser has already
+	// spawned when the failure surfaces — the failure stops remaining
+	// launches and is reported, but nothing can roll back the spawn.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	counter := filepath.Join(dir, "count")
+	failingBrowser := filepath.Join(dir, "fail-on-second")
+	body := "#!/bin/sh\n" +
+		"for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> " + log + "\ndone\n" +
+		"count=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+		"count=$((count+1))\n" +
+		"echo $count > " + counter + "\n" +
+		"[ \"$count\" -ge 2 ] && exit 7\n" +
+		"exit 0\n"
+	if err := os.WriteFile(failingBrowser, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, executableTargetConfig(failingBrowser))
+
+	first := writeLocalDocument(t, dir, "first.html", "<html></html>")
+	second := writeLocalDocument(t, dir, "second.pdf", "%PDF")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, first, second)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "open failed") {
+		t.Errorf("stderr = %q, want the visible launch failure", stderr)
+	}
+	// Partial dispatch evidence: the second browser ran and failed
+	// after the first had already launched — nothing rolled back.
+	argv := readArgvLog(t, log)
+	if len(argv) != 2 {
+		t.Fatalf("browser attempts = %q, want both documents attempted", argv)
+	}
+	if launched := strings.Count(stdout, "launched: fake"); launched != 1 {
+		t.Errorf("stdout reports %d launches, want exactly the first document", launched)
+	}
 }

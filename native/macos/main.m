@@ -206,21 +206,21 @@ static void AppendLog(NSString *message) {
 // visible. spawn is fire-and-forget; per-child exit status is not
 // tracked (documented limitation, consistent with the launch probes).
 //
-// Each step records a structured activity entry: receipt precedes
-// validation, preflight failures carry a safe category, and a
-// successful spawn records dispatch-started with outcome unknown — a
-// spawned child is not proof a browser opened or a page loaded.
+// ForwardURLsShim forwards each web URL by spawning the embedded
+// brouter with structured arguments — never a shell. The child
+// inherits no terminal: its output is appended to the diagnostics log
+// so GUI-originated failures stay visible. spawn is fire-and-forget;
+// per-child exit status is not tracked (documented limitation,
+// consistent with the launch probes). Each step records a structured
+// activity entry: receipt precedes validation, preflight failures
+// carry a safe category, and a successful spawn records
+// dispatch-started with outcome unknown — a spawned child is not proof
+// a browser opened or a page loaded.
 void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 	NSArray<NSString *> *urls) {
 	for (NSString *url in urls) {
-		// Receipt is recorded before any validation, so the menu can
-		// answer whether an event even arrived.
 		[activity recordKind:@"receipt" entryPoint:entryPoint
 			errorCategory:nil detail:-1];
-
-		// Privacy: log the event, never the URL. Query strings and
-		// fragments can carry secrets; the browser's own history and
-		// the destination server are the record of what was opened.
 		AppendLog(@"forwarding URL event");
 
 		NSString *brouter = EmbeddedBrouterPath();
@@ -264,12 +264,74 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 			[activity recordKind:@"dispatch-failed" entryPoint:entryPoint
 				errorCategory:@"spawn-failed" detail:spawnErr];
 		} else {
-			// Fire-and-forget: the child's later outcome (config
-			// validation, browser resolution, page load) is not
-			// observable here and stays unknown by design.
 			[activity recordKind:@"dispatch-started" entryPoint:entryPoint
 				errorCategory:nil detail:-1];
 		}
+	}
+}
+
+// ForwardDocumentsShim hands a batch of local documents to the
+// embedded brouter in ONE spawn (TASK-0033): brouter preflights every
+// document before launching any browser, so VALIDATION IS
+// ALL-OR-NOTHING — a valid file never launches alongside one that
+// fails preflight. The guarantee is bounded: once browsers start, a
+// later spawn failure cannot roll back already launched ones (no
+// rollback is possible after a browser spawn). Same redacted logging
+// and fire-and-forget dispatch as URL forwarding.
+void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
+	NSArray<NSString *> *paths) {
+	[activity recordKind:@"receipt" entryPoint:entryPoint
+		errorCategory:nil detail:-1];
+	AppendLog(@"forwarding URL event");
+
+	NSString *brouter = EmbeddedBrouterPath();
+	NSString *config = ConfigPath();
+	if (config == nil) {
+		AppendLog(@"error: cannot determine the user config directory: "
+			@"set $XDG_CONFIG_HOME to an absolute path, or set $HOME");
+		[activity recordKind:@"preflight" entryPoint:entryPoint
+			errorCategory:@"unavailable-config-directory" detail:-1];
+		return;
+	}
+	if (![[NSFileManager defaultManager] isExecutableFileAtPath:brouter]) {
+		AppendLog([NSString stringWithFormat:@"error: embedded brouter missing at %@", brouter]);
+		[activity recordKind:@"preflight" entryPoint:entryPoint
+			errorCategory:@"missing-embedded-binary" detail:-1];
+		return;
+	}
+	[activity recordKind:@"preflight" entryPoint:entryPoint
+		errorCategory:nil detail:-1];
+
+	NSString *log = HandlerLogPath();
+	posix_spawn_file_actions_t actions;
+	posix_spawn_file_actions_init(&actions);
+	posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, log.fileSystemRepresentation,
+		O_WRONLY | O_APPEND | O_CREAT, 0644);
+	posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+
+	NSMutableArray<NSString *> *argvStrings = [NSMutableArray arrayWithObjects:
+		brouter, @"open", @"--config", config, nil];
+	for (NSString *path in paths) {
+		[argvStrings addObject:path];
+	}
+
+	NSInteger argc = [argvStrings count];
+	char *argv[argc + 1];
+	for (NSInteger i = 0; i < argc; i++) {
+		argv[i] = (char *)argvStrings[i].UTF8String;
+	}
+	argv[argc] = NULL;
+
+	pid_t pid = -1;
+	int spawnErr = posix_spawn(&pid, brouter.fileSystemRepresentation, &actions, NULL, argv, environ);
+	posix_spawn_file_actions_destroy(&actions);
+	if (spawnErr != 0) {
+		AppendLog([NSString stringWithFormat:@"error: spawn failed (%d)", spawnErr]);
+		[activity recordKind:@"dispatch-failed" entryPoint:entryPoint
+			errorCategory:@"spawn-failed" detail:spawnErr];
+	} else {
+		[activity recordKind:@"dispatch-started" entryPoint:entryPoint
+			errorCategory:nil detail:-1];
 	}
 }
 
@@ -461,7 +523,6 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 - (instancetype)initWithActivity:(RecentActivity *)activity;
 - (void)handleGetURLEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply;
 @end
-
 @implementation EventRedirector {
 	RecentActivity *_activity;
 }
@@ -481,21 +542,113 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 }
 @end
 
+// OpenDocumentsDelegate receives the kAEOpenDocuments Apple Events
+// (TASK-0033): LaunchServices delivers local documents here when the
+// handler is already running (warm path), decoded to file URLs. The
+// delivery surface is exactly the modern NSApplicationDelegate
+// selector -application:openURLs: (macOS 10.13+, non-deprecated); the
+// deprecated -application:openFiles: is deliberately NOT implemented
+// so AppKit has exactly one dispatch target and documents can never
+// be delivered twice. The shim holds no document policy — what may
+// open and how errors surface is entirely brouter's decision.
+@interface OpenDocumentsDelegate : NSObject <NSApplicationDelegate>
+- (instancetype)initWithActivity:(RecentActivity *)activity;
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
+@end
+
+@implementation OpenDocumentsDelegate {
+	RecentActivity *_activity;
+}
+
+- (instancetype)initWithActivity:(RecentActivity *)activity {
+	if (self = [super init]) {
+		_activity = activity;
+	}
+	return self;
+}
+
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+	// The header hands openURLs: ANY URLs — document types AND web
+	// scheme types. Routing must partition: file URLs batch into one
+	// brouter spawn (atomic preflight across the whole set,
+	// TASK-0033); web URLs keep their per-URL forwarding. A mixed
+	// array can never push a web URL through the document batch or
+	// vice versa. Preflight atomicity is validation-only: browsers,
+	// once spawned, cannot be rolled back.
+	NSMutableArray<NSString *> *documents = [NSMutableArray array];
+	NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
+	for (NSURL *url in urls) {
+		NSString *spec = [url absoluteString];
+		if (spec.length == 0) {
+			continue;
+		}
+		if (url.isFileURL) {
+			[documents addObject:spec];
+		} else {
+			[webURLs addObject:spec];
+		}
+	}
+	if (documents.count > 0) {
+		ForwardDocumentsShim(_activity, @"os-event", documents);
+	}
+	if (webURLs.count > 0) {
+		ForwardURLsShim(_activity, @"os-event", webURLs);
+	}
+}
+
+@end
+
+// IsDocumentArgument classifies one cold-launch argument: file URLs
+// and path-shaped strings are documents; anything else is a web URL.
+// Existence is NOT consulted — a missing path must reach brouter and
+// come back as a visible, redacted error, never disappear in silence.
+static BOOL IsDocumentArgument(NSString *argument) {
+	if ([argument hasPrefix:@"file://"]) {
+		return YES;
+	}
+	if ([argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
+		return NO;
+	}
+	return [argument hasPrefix:@"/"] || [argument hasPrefix:@"~"] ||
+		[argument containsString:@"/"];
+}
+
 int main(int argc, const char *argv[]) {
 	@autoreleasepool {
 		NSMutableArray<NSString *> *argvURLs = [NSMutableArray array];
 		for (NSInteger i = 1; i < argc; i++) {
 			NSString *argument = [NSString stringWithUTF8String:argv[i]];
-			if ([argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
+			// Cold launch: web URLs ride argv as before; local documents
+			// arrive as file:// URLs (LaunchServices handoff) or as
+			// plain paths (command line, open -a) — missing ones
+			// included, so brouter reports them visibly. Bare tokens
+			// with no path shape are ignored: LaunchServices can never
+			// hand one over, and the policy for them lives in brouter.
+			if (IsDocumentArgument(argument) ||
+				[argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
 				[argvURLs addObject:argument];
 			}
 		}
 
 		if (argvURLs.count > 0) {
-			// Launched with URLs on the command line (or via LaunchServices
-			// argv handoff): forward and exit. Testable without LaunchServices.
+			// Launched with inputs on the command line (or via
+			// LaunchServices argv handoff): forward and exit. Testable
+			// without LaunchServices. Web URLs stay per-URL spawns;
+			// documents batch into one spawn so brouter can preflight
+			// the whole set before launching anything (validation
+			// atomicity — later spawn failures cannot be undone).
 			RecentActivity *activity = [[RecentActivity alloc] init];
-			ForwardURLsShim(activity, @"argv", argvURLs);
+			NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
+			NSMutableArray<NSString *> *documents = [NSMutableArray array];
+			for (NSString *argument in argvURLs) {
+				[IsDocumentArgument(argument) ? documents : webURLs addObject:argument];
+			}
+			if (webURLs.count > 0) {
+				ForwardURLsShim(activity, @"argv", webURLs);
+			}
+			if (documents.count > 0) {
+				ForwardDocumentsShim(activity, @"argv", documents);
+			}
 			return 0;
 		}
 
@@ -507,6 +660,16 @@ int main(int argc, const char *argv[]) {
 		// Events to the NSAppleEventManager handler.
 		NSApplication *application = [NSApplication sharedApplication];
 		RecentActivity *activity = [[RecentActivity alloc] init];
+		// The documents delegate must be installed before the run loop
+		// starts: only then does NSApplication service kAEOpenDocuments
+		// and deliver local documents to application:openURLs:. The strong
+		// local keeps it alive for the whole run — NSApplication holds
+		// its delegate weakly, so the stack reference in main() is the
+		// lifetime owner (verified by the open-files harness, which
+		// asserts the installed delegate identity and selector surface
+		// before delivering events).
+		OpenDocumentsDelegate *documents = [[OpenDocumentsDelegate alloc] initWithActivity:activity];
+		application.delegate = documents;
 		EventRedirector *redirector = [[EventRedirector alloc] initWithActivity:activity];
 		[[NSAppleEventManager sharedAppleEventManager]
 			setEventHandler:redirector
