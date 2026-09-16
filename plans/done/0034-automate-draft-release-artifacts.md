@@ -1,7 +1,7 @@
 ---
 id: TASK-0034
 title: Automate validated draft release artifacts
-status: doing
+status: done
 depends_on: [TASK-0004, TASK-0005, TASK-0013, TASK-0014, TASK-0017]
 priority: normal
 tags: [release, automation, packaging, security]
@@ -31,10 +31,23 @@ Implemented in `.github/workflows/release.yml`, `scripts/release-artifacts.sh`, 
 
 Automated and package-build evidence is build-only; it does not establish runtime behavior, cross-compiled platform behavior, Developer ID signing, notarization, Gatekeeper transfer, or release approval.
 
+## Actual outcome
+
+The first authorized tag run completed successfully from `main`:
+
+- Tag: `v0.1.0`.
+- Target commit: `5c7d5d331a16920e8683a3b0fef09d5305f220c5`.
+- Workflow run: [35130454143](https://github.com/cristianoliveira/brouter/actions/runs/35130454143).
+- Draft release: [Brouter v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/untagged-27ace58a8a5339e71fc0).
+- The draft contains all five expected assets: `brouter-v0.1.0-linux-x86_64.tar.gz`, `brouter-v0.1.0-linux-aarch64.tar.gz`, `brouter-v0.1.0-darwin-arm64.tar.gz`, `brouter-handler-v0.1.0-darwin-arm64.tar.gz`, and `SHA256SUMS`.
+
+Downloaded assets were inspected: `sha256sum -c SHA256SUMS` passed; every archive contained its expected target root, executable or app payload, and `VERSION` set to `0.1.0`; and the manifest contained sorted checksums for all four archives. The macOS workflow log records ad-hoc signing and the app archive contains the code-signature resources plus `CFBundleShortVersionString=0.1.0` and `CFBundleVersion=010`. The release remains a draft and unpublished (`publishedAt` is null); no publication or tag mutation was performed.
+
+No protected `v*` tag ruleset was found through the repository API, and no repository settings were changed. Publication, production signing/notarization, runtime GUI, browser, and nix-darwin acceptance remain separate gates in TASK-0015, TASK-0019, and TASK-0024.
+
 ## Remaining gates
 
-- Configure protected `v*` tag rules so only authorized maintainers can create, move, or delete release tags; run the workflow only after explicit release approval. This task does not create tags.
-- Inspect the resulting DRAFT release and archive contents/checksums on GitHub.
+- Configure protected `v*` tag rules so only authorized maintainers can create, move, or delete release tags before any future release; this task does not change repository settings.
 - Keep real-platform GUI, browser/default-handler, install/update/remove/restore and nix-darwin lifecycle acceptance in TASK-0015, TASK-0019 and TASK-0024.
 - Developer ID signing, notarization, Gatekeeper transfer, publication, and a full release matrix remain unverified and out of scope.
 
