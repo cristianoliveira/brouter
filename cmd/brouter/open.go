@@ -176,6 +176,8 @@ func isDocumentBatch(args []string) bool {
 // openDocumentBatch handles a multi-document command line: the whole
 // batch is rejected before any browser starts when even one document
 // fails preflight — valid files never launch alongside a failed one.
+// That is the full guarantee: dispatch afterwards is partial by
+// design (see launchDocuments).
 func openDocumentBatch(args []string, cfg *config.Config, stderr, stdout io.Writer) (int, bool) {
 	fileURLs := make([]string, 0, len(args))
 	for _, arg := range args {

@@ -630,3 +630,47 @@ func TestOpenMixedFileAndURLArgumentsIsAUsageError(t *testing.T) {
 		t.Error("a browser process started for a usage error")
 	}
 }
+
+func TestOpenBatchDispatchIsPartialAfterPreflightWhenABrowserFails(t *testing.T) {
+	// The honest contract: preflight is all-or-nothing, dispatch is
+	// not. Given a batch where the browser succeeds on the first
+	// document and fails on the second, the first browser has already
+	// spawned when the failure surfaces — the failure stops remaining
+	// launches and is reported, but nothing can roll back the spawn.
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	counter := filepath.Join(dir, "count")
+	failingBrowser := filepath.Join(dir, "fail-on-second")
+	body := "#!/bin/sh\n" +
+		"for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> " + log + "\ndone\n" +
+		"count=$(cat " + counter + " 2>/dev/null || echo 0)\n" +
+		"count=$((count+1))\n" +
+		"echo $count > " + counter + "\n" +
+		"[ \"$count\" -ge 2 ] && exit 7\n" +
+		"exit 0\n"
+	if err := os.WriteFile(failingBrowser, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeConfig(t, executableTargetConfig(failingBrowser))
+
+	first := writeLocalDocument(t, dir, "first.html", "<html></html>")
+	second := writeLocalDocument(t, dir, "second.pdf", "%PDF")
+
+	code, stdout, stderr := runCapture(t, "", "open", "--config", path, first, second)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "open failed") {
+		t.Errorf("stderr = %q, want the visible launch failure", stderr)
+	}
+	// Partial dispatch evidence: the second browser ran and failed
+	// after the first had already launched — nothing rolled back.
+	argv := readArgvLog(t, log)
+	if len(argv) != 2 {
+		t.Fatalf("browser attempts = %q, want both documents attempted", argv)
+	}
+	if launched := strings.Count(stdout, "launched: fake"); launched != 1 {
+		t.Errorf("stdout reports %d launches, want exactly the first document", launched)
+	}
+}
