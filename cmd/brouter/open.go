@@ -21,7 +21,11 @@ import (
 // (cli.go); args holds zero or one positional URL.
 func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// A multi-document command line bypasses singleInput (which enforces
-	// exactly one URL): the batch is all-or-nothing by preflight.
+	// exactly one URL): the batch is atomic by PREFLIGHT — every
+	// document is validated before the first browser starts. That
+	// atomicity ends at the first spawn: a browser failure on a later
+	// document stops the remaining launches but cannot undo earlier
+	// ones (no rollback is possible after a browser spawn).
 	if code, handled := openDocumentBatchFromArgs(args, configPath, stderr, stdout); handled {
 		return code
 	}
@@ -136,8 +140,12 @@ func openByRouteCommand(cfg *config.Config, configPath, rawURL string, stderr, s
 	return launchCommandTarget(cfg, res, rawURL, stderr, stdout), true
 }
 
-// openDocumentBatchFromArgs runs the all-or-nothing document batch
+// openDocumentBatchFromArgs runs the preflight-atomic document batch
 // when the arguments are one; handled is false for anything else.
+// Atomicity covers validation only: all documents pass Resolve before
+// any browser starts, but a spawn failure mid-batch leaves already
+// launched browsers running — no rollback is possible after a browser
+// spawn.
 func openDocumentBatchFromArgs(args []string, configPath string, stderr, stdout io.Writer) (int, bool) {
 	if !isDocumentBatch(args) {
 		return 0, false
@@ -183,7 +191,8 @@ func openDocumentBatch(args []string, cfg *config.Config, stderr, stdout io.Writ
 
 // launchDocuments resolves the default configured browser once and
 // launches it once per file URL. A launch failure stops the remaining
-// launches and is reported visibly.
+// launches and is reported visibly — but browsers already spawned
+// stay running: no rollback is possible after a browser spawn.
 func launchDocuments(cfg *config.Config, fileURLs []string, stderr, stdout io.Writer) (int, bool) {
 	name := string(cfg.Default)
 	def, defined := cfg.Targets[name]

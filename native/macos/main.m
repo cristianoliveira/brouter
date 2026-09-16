@@ -272,9 +272,12 @@ void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 
 // ForwardDocumentsShim hands a batch of local documents to the
 // embedded brouter in ONE spawn (TASK-0033): brouter preflights every
-// document before launching any browser, so a batch is all-or-nothing
-// — a valid file never launches alongside a failed one. Same redacted
-// logging and fire-and-forget dispatch as URL forwarding.
+// document before launching any browser, so VALIDATION IS
+// ALL-OR-NOTHING — a valid file never launches alongside one that
+// fails preflight. The guarantee is bounded: once browsers start, a
+// later spawn failure cannot roll back already launched ones (no
+// rollback is possible after a browser spawn). Same redacted logging
+// and fire-and-forget dispatch as URL forwarding.
 void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 	NSArray<NSString *> *paths) {
 	[activity recordKind:@"receipt" entryPoint:entryPoint
@@ -567,9 +570,11 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
 	// The header hands openURLs: ANY URLs — document types AND web
 	// scheme types. Routing must partition: file URLs batch into one
-	// brouter spawn (all-or-nothing preflight, TASK-0033); web URLs
-	// keep their per-URL forwarding. A mixed array can never push a
-	// web URL through the document batch or vice versa.
+	// brouter spawn (atomic preflight across the whole set,
+	// TASK-0033); web URLs keep their per-URL forwarding. A mixed
+	// array can never push a web URL through the document batch or
+	// vice versa. Preflight atomicity is validation-only: browsers,
+	// once spawned, cannot be rolled back.
 	NSMutableArray<NSString *> *documents = [NSMutableArray array];
 	NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
 	for (NSURL *url in urls) {
@@ -630,7 +635,8 @@ int main(int argc, const char *argv[]) {
 			// LaunchServices argv handoff): forward and exit. Testable
 			// without LaunchServices. Web URLs stay per-URL spawns;
 			// documents batch into one spawn so brouter can preflight
-			// them all-or-nothing.
+			// the whole set before launching anything (validation
+			// atomicity — later spawn failures cannot be undone).
 			RecentActivity *activity = [[RecentActivity alloc] init];
 			NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
 			NSMutableArray<NSString *> *documents = [NSMutableArray array];
