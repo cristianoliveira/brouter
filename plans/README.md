@@ -19,7 +19,7 @@ These defaults unblock implementation while preserving the unresolved decisions 
 - Support exact-host, explicit-subdomain, and full-URL Go-regex matchers. A rule has exactly one matcher in the first version; combinations wait.
 - Evaluate regexes against the original URL string. Preserve the original URL for forwarding. Reject malformed URLs and non-HTTP(S) schemes.
 - Use `brouter open URL`, `brouter validate`, and `brouter explain URL`; no GUI or always-on daemon unless OS evidence requires one.
-- Accept an explicit config path. The fallback is `$XDG_CONFIG_HOME/brouter/config.toml` on Linux and `~/Library/Application Support/brouter/config.toml` on macOS. Do not merge files or override fields through the environment.
+- Accept an explicit config path. The fallback is `$XDG_CONFIG_HOME/brouter/config.toml` only when `XDG_CONFIG_HOME` is absolute; otherwise use `$HOME/.config/brouter/config.toml` on both macOS and Linux. There is no Application Support fallback, no implicit migration, and no environment field override.
 - Launch failures are visible; there is no silent cross-profile fallback. Do not persist URLs or emit telemetry by default.
 - Pin Go 1.27.1 during bootstrap (latest stable at 2026-09-13, go.dev/dl). Use macOS 13 (Ventura) arm64 as the provisional deployment floor; TASK-0006 may revise it from real event-integration evidence. No Intel support is claimed.
 - Prefer a flake package for Linux first. Defer choosing a NixOS module versus Home Manager integration until TASK-0014; Home Manager usage is unknown.
