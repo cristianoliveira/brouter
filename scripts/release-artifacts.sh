@@ -165,7 +165,7 @@ manifest() {
 	local files=("$dir"/*.tar.gz)
 	shopt -u nullglob
 	[[ "${#files[@]}" -eq "${#expected[@]}" ]] || die "unexpected archive in $dir"
-	( cd "$dir" && sha256sum "${expected[@]}" > SHA256SUMS )
+	( cd "$dir" && sha256sum "${expected[@]}" | LC_ALL=C sort -k2,2 > SHA256SUMS )
 	printf 'Brouter %s release artifacts\n' "$tag"
 	cat "$dir/SHA256SUMS"
 }

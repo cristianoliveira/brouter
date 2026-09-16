@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -61,6 +62,41 @@ func TestReleaseRejectsUnsupportedTargetAndMissingArtifacts(t *testing.T) {
 	}
 	if output, err := runReleaseHelper(t, "manifest", "v1.2.3", t.TempDir()); err == nil {
 		t.Fatalf("incomplete manifest succeeded: %s", output)
+	}
+}
+
+func TestReleaseManifestIsSortedByFilename(t *testing.T) {
+	// Given all supported archive names, when the manifest is generated, its
+	// records are sorted by filename rather than build-job completion order.
+	dir := t.TempDir()
+	names := []string{
+		"brouter-v1.2.3-linux-x86_64.tar.gz",
+		"brouter-v1.2.3-linux-aarch64.tar.gz",
+		"brouter-v1.2.3-darwin-arm64.tar.gz",
+		"brouter-handler-v1.2.3-darwin-arm64.tar.gz",
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	output, err := runReleaseHelper(t, "manifest", "v1.2.3", dir)
+	if err != nil {
+		t.Fatalf("manifest failed: %v\n%s", err, output)
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "SHA256SUMS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual []string
+	for _, line := range strings.Split(strings.TrimSpace(string(manifest)), "\n") {
+		actual = append(actual, strings.Fields(line)[1])
+	}
+	expected := append([]string(nil), names...)
+	sort.Strings(expected)
+	if strings.Join(actual, "\n") != strings.Join(expected, "\n") {
+		t.Errorf("manifest filenames = %v, want sorted %v", actual, expected)
 	}
 }
 
