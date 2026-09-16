@@ -543,14 +543,14 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 // (TASK-0033): LaunchServices delivers local documents here when the
 // handler is already running (warm path), decoded to file URLs. The
 // delivery surface is exactly the modern NSApplicationDelegate
-// selector -application:open: (macOS 10.13+, non-deprecated); the
+// selector -application:openURLs: (macOS 10.13+, non-deprecated); the
 // deprecated -application:openFiles: is deliberately NOT implemented
 // so AppKit has exactly one dispatch target and documents can never
 // be delivered twice. The shim holds no document policy — what may
 // open and how errors surface is entirely brouter's decision.
 @interface OpenDocumentsDelegate : NSObject <NSApplicationDelegate>
 - (instancetype)initWithActivity:(RecentActivity *)activity;
-- (void)application:(NSApplication *)application open:(NSArray<NSURL *> *)urls;
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
 @end
 
 @implementation OpenDocumentsDelegate {
@@ -564,7 +564,7 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 	return self;
 }
 
-- (void)application:(NSApplication *)application open:(NSArray<NSURL *> *)urls {
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
 	NSMutableArray<NSString *> *specs = [NSMutableArray array];
 	for (NSURL *url in urls) {
 		NSString *spec = [url absoluteString];
@@ -644,7 +644,7 @@ int main(int argc, const char *argv[]) {
 		RecentActivity *activity = [[RecentActivity alloc] init];
 		// The documents delegate must be installed before the run loop
 		// starts: only then does NSApplication service kAEOpenDocuments
-		// and deliver local documents to application:open:. The strong
+		// and deliver local documents to application:openURLs:. The strong
 		// local keeps it alive for the whole run — NSApplication holds
 		// its delegate weakly, so the stack reference in main() is the
 		// lifetime owner (verified by the open-files harness, which

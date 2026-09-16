@@ -3,13 +3,17 @@
 // together with the shim source (the shim entry point is renamed on
 // the compiler command line).
 //
-// Mode: warm — drives OpenDocumentsDelegate's application:open: the
-// same way NSApplication delivers kAEOpenDocuments on a running
-// handler, with several file URLs (spaces and unicode names). A stub
-// "brouter" beside the harness binary records the forwarded arguments,
-// so the test proves the warm path forwards one spawn per document
-// with the encoded file URLs — without LaunchServices, a real install,
-// or a GUI. Exit 0 on success, 3 on any failed assertion.
+// What this harness proves: the delegate wiring, lifetime, and the
+// EXACT AppKit delivery selector from the local SDK header —
+// -application:openURLs: (NSURL array, macOS 10.13+), with the
+// deprecated -application:openFiles:/-application:openFile: absent so
+// AppKit has one dispatch target and a document can never be delivered
+// twice. Driving the selector with file URLs (spaces in names) must
+// forward one batched spawn through a stub embedded brouter with the
+// redacted handler log — no LaunchServices registration, no real
+// install, no GUI. The hop before this call (real LaunchServices
+// handoff to an installed, running bundle) cannot be reached without
+// live state and is recorded UNTESTED.
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 
@@ -18,10 +22,12 @@
 // Provided by the shim source linked into this harness.
 void ForwardURLsShim(RecentActivity *activity, NSString *entryPoint,
 	NSArray<NSString *> *urls);
+void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
+	NSArray<NSString *> *paths);
 
 @interface OpenDocumentsDelegate : NSObject <NSApplicationDelegate>
 - (instancetype)initWithActivity:(RecentActivity *)activity;
-- (void)application:(NSApplication *)application open:(NSArray<NSURL *> *)urls;
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls;
 @end
 
 @interface RecentActivity : NSObject
@@ -71,27 +77,37 @@ int main(int argc, const char *argv[]) {
 		if (application.delegate != (id<NSApplicationDelegate>)delegate) {
 			return Fail("delegate not installed on NSApplication");
 		}
+		// NSApplication queues document events until finishLaunching:
+		// without it the odoc handler is not installed. main() reaches
+		// finishLaunching inside [application run]; the harness does it
+		// explicitly.
+		[application finishLaunching];
 
-		// Exact delivery surface: the modern -application:open: (NSURL,
-		// macOS 10.13+) is implemented; the deprecated
-		// -application:openFiles: is NOT, so AppKit has exactly one
-		// dispatch target and a document can never be delivered twice.
-		if (![delegate respondsToSelector:@selector(application:open:)]) {
-			return Fail("application:open: not implemented");
+		// Exact delivery surface per the local AppKit SDK header:
+		// -application:openURLs: implemented;
+		// deprecated -application:openFiles: and singular
+		// -application:openFile: absent (the header says implementing
+		// openURLs: suppresses both — one dispatch target, no double
+		// delivery).
+		if (![delegate respondsToSelector:@selector(application:openURLs:)]) {
+			return Fail("application:openURLs: not implemented");
 		}
 		if ([delegate respondsToSelector:@selector(application:openFiles:)]) {
 			return Fail("deprecated application:openFiles: must not be implemented");
 		}
+		if ([delegate respondsToSelector:@selector(application:openFile:)]) {
+			return Fail("deprecated application:openFile: must not be implemented");
+		}
 
-		// Warm-path delivery, exactly what NSApplication does when the
-		// running handler is handed documents: application:open: with
-		// file URLs, potentially several at once.
-		[delegate application:application open:@[first, second]];
+		// Drive the exact selector AppKit itself calls after servicing a
+		// kAEOpenDocuments event, with several file URLs at once.
+		[delegate application:application openURLs:@[first, second]];
 
 		// The shim spawns asynchronously; poll for the stub's log.
 		NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
 		NSString *logged = nil;
-		while ([[NSDate date] compare:deadline] == NSOrderedAscending) {
+		while ([NSDate date].timeIntervalSinceReferenceDate <
+			deadline.timeIntervalSinceReferenceDate) {
 			logged = ReadFile(logPath);
 			if (logged && [logged componentsSeparatedByString:@"\n"].count >= 3) {
 				break;
@@ -102,23 +118,30 @@ int main(int argc, const char *argv[]) {
 			return Fail("stub argv log never appeared");
 		}
 
-		// Each spawn appends its whole argv (open, --config, cfg, URL);
-		// assert the two documents arrived, encoded, one spawn each.
-		NSArray *lines = [logged componentsSeparatedByString:@"\n"];
+		// Each spawn appends its whole argv (open, --config, cfg, URLs);
+		// assert the two documents arrived in ONE batched spawn.
+		if (ReadFile(logPath) == nil) {
+			return Fail("stub argv log unreadable");
+		}
 		NSString *wantFirst = [first absoluteString];
 		NSString *wantSecond = [second absoluteString];
-		int firstCount = 0, secondCount = 0;
-		for (NSString *line in lines) {
+		int firstCount = 0, secondCount = 0, spawnCount = 0;
+		for (NSString *line in [logged componentsSeparatedByString:@"\n"]) {
+			if ([line isEqualToString:@"open"]) spawnCount++;
 			if ([line isEqualToString:wantFirst]) firstCount++;
 			if ([line isEqualToString:wantSecond]) secondCount++;
+		}
+		if (spawnCount != 1) {
+			fprintf(stderr, "FAIL spawns=%d — documents must arrive as one batched spawn\n", spawnCount);
+			return 3;
 		}
 		if (firstCount != 1 || secondCount != 1) {
 			fprintf(stderr, "FAIL forwards first=%d second=%d\n", firstCount, secondCount);
 			return 3;
 		}
 
-		// Privacy contract on the warm path: the handler log records the
-		// event, never the document path.
+		// Privacy contract on the warm path: the event is logged, the
+		// document path is not.
 		NSString *handlerLog = ReadFile([NSString stringWithUTF8String:getenv("BRROUTER_HANDLER_LOG")]);
 		if (!handlerLog || ![handlerLog containsString:@"forwarding URL event"]) {
 			return Fail("handler log missing the redacted event marker");

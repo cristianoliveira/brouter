@@ -11,7 +11,7 @@ import (
 )
 
 // TASK-0033 warm path: kAEOpenDocuments delivery to a running handler
-// reaches OpenDocumentsDelegate's application:open:. This test drives
+// reaches OpenDocumentsDelegate's application:openURLs:. This test drives
 // that selector directly through a native harness compiled against the
 // shim source — deterministic, no LaunchServices, no live install, no
 // GUI. Real double-click/Open With delivery through LaunchServices on
