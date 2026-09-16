@@ -30,6 +30,11 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>HTML document</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>html</string>
+				<string>htm</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -44,6 +49,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>XHTML document</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>xhtml</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -62,6 +71,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>PDF document</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pdf</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -76,6 +89,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>SVG image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>svg</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -90,6 +107,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>PNG image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>png</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -104,6 +125,11 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>JPEG image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>jpg</string>
+				<string>jpeg</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -118,6 +144,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>GIF image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>gif</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -132,6 +162,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>WebP image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>webp</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -146,6 +180,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>BMP image</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>bmp</string>
+			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>

@@ -565,17 +565,29 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 }
 
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
-	NSMutableArray<NSString *> *specs = [NSMutableArray array];
+	// The header hands openURLs: ANY URLs — document types AND web
+	// scheme types. Routing must partition: file URLs batch into one
+	// brouter spawn (all-or-nothing preflight, TASK-0033); web URLs
+	// keep their per-URL forwarding. A mixed array can never push a
+	// web URL through the document batch or vice versa.
+	NSMutableArray<NSString *> *documents = [NSMutableArray array];
+	NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
 	for (NSURL *url in urls) {
 		NSString *spec = [url absoluteString];
-		if (spec.length > 0) {
-			[specs addObject:spec];
+		if (spec.length == 0) {
+			continue;
+		}
+		if (url.isFileURL) {
+			[documents addObject:spec];
+		} else {
+			[webURLs addObject:spec];
 		}
 	}
-	if (specs.count > 0) {
-		// One batched spawn: brouter preflights the whole set before any
-	// browser starts (all-or-nothing, TASK-0033).
-	ForwardDocumentsShim(_activity, @"os-event", specs);
+	if (documents.count > 0) {
+		ForwardDocumentsShim(_activity, @"os-event", documents);
+	}
+	if (webURLs.count > 0) {
+		ForwardURLsShim(_activity, @"os-event", webURLs);
 	}
 }
 

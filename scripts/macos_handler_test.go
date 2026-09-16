@@ -153,8 +153,12 @@ func assertBundleStructure(t *testing.T, app string) {
 func assertDocumentTypesDeclareViewerRole(t *testing.T, declared string) {
 	t.Helper()
 	docTypes := declared[strings.Index(declared, "CFBundleDocumentTypes"):]
-	if !strings.Contains(docTypes[:strings.Index(docTypes, "</array>")], "<string>Viewer</string>") {
-		t.Errorf("Info.plist document types do not declare a Viewer role")
+	docTypes = docTypes[:strings.Index(docTypes, "CFBundleURLTypes")]
+	// Each document dict also carries a CFBundleTypeExtensions array;
+	// count Viewer roles across the whole document-types section.
+	if strings.Count(docTypes, "<string>Viewer</string>") != 9 {
+		t.Errorf("document types Viewer roles = %d, want 9 (one per declared type)",
+			strings.Count(docTypes, "<string>Viewer</string>"))
 	}
 }
 
@@ -373,35 +377,50 @@ func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
 		first, second, "https://example.com/missing")
 }
 
+// pollUntilAllInputsLogged re-reads the stub log until every expected
+// input line has landed or the deadline passes: the stub appends line
+// by line while the shim spawns asynchronously, so mere file
+// existence can catch a half-written log.
+func pollUntilAllInputsLogged(t *testing.T, log string, inputs []string) []string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		argv := readArgvFile(t, waitForFile(t, log))
+		if allInputsPresent(argv, inputs) {
+			return argv
+		}
+		if time.Now().After(deadline) {
+			return argv
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// allInputsPresent reports whether every expected input appears in the
+// logged lines at least once.
+func allInputsPresent(lines, inputs []string) bool {
+	for _, input := range inputs {
+		found := false
+		for _, line := range lines {
+			if line == input {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // assertForwardedInputs checks a stub log for exactly wantSpawns
 // invocations and each listed input forwarded exactly once. Spawn
 // groups interleave at line granularity (append-only shared log), so
 // the inputs are asserted set-wise.
 func assertForwardedInputs(t *testing.T, log string, wantSpawns int, inputs ...string) {
 	t.Helper()
-	// The stub appends line by line while the shim spawns
-	// asynchronously: poll until every input line has landed (or time
-	// out) — file existence alone can catch a half-written log.
-	deadline := time.Now().Add(5 * time.Second)
-	var argv []string
-	for {
-		argv = readArgvFile(t, waitForFile(t, log))
-		seen := map[string]bool{}
-		for _, line := range argv {
-			for _, input := range inputs {
-				if line == input {
-					seen[input] = true
-				}
-			}
-		}
-		if len(seen) == len(inputs) {
-			break
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	argv := pollUntilAllInputsLogged(t, log, inputs)
 	spawnCount := 0
 	forwarded := map[string]int{}
 	for _, line := range argv {

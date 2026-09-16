@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TASK-0033 warm path: kAEOpenDocuments delivery to a running handler
@@ -94,7 +95,7 @@ func TestOpenFilesDelegateForwardsWarmDocuments(t *testing.T) {
 	}
 
 	// The delegate forwarded one encoded file URL per document.
-	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir)
+	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir, 1)
 
 	// Redaction on the warm path: the event is logged, the path is not.
 	handlerLog := readFileOrFatal(t, h.handlerLog)
@@ -142,12 +143,13 @@ func decodedFixtureURLs(lines []string, onDisk map[string]bool) []string {
 	return found
 }
 
-func assertForwardedOncePerFixtureDocument(t *testing.T, stubLog, dir string) {
+func assertForwardedOncePerFixtureDocument(t *testing.T, stubLog, dir string, wantSpawns int) {
 	t.Helper()
 	// The whole warm event arrives as ONE batched spawn: brouter
-	// preflights every document before any browser starts.
-	if spawns := countSpawns(readArgvFile(t, stubLog)); spawns != 1 {
-		t.Fatalf("document spawns = %d, want exactly one batched spawn", spawns)
+	// preflights every document before any browser starts. A mixed
+	// array adds exactly one more spawn for the web URL.
+	if spawns := countSpawns(readArgvFile(t, stubLog)); spawns != wantSpawns {
+		t.Fatalf("spawns = %d, want %d", spawns, wantSpawns)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 2 {
@@ -195,5 +197,81 @@ func TestOpenFilesRealAppleEventDispatchReachesOpenURLs(t *testing.T) {
 		t.Fatalf("warm-dispatch harness failed: %v\n%s", err, out)
 	}
 
-	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir)
+	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir, 1)
+}
+
+// containsLine reports whether lines contains an exact entry.
+func containsLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if line == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestOpenFilesMixedArraySplitsDocumentsFromWebURLs(t *testing.T) {
+	// openURLs: receives any URLs per the AppKit header. A mixed array
+	// (documents + a web URL) must split: the documents batch into one
+	// spawn, the web URL keeps its own per-URL spawn — no web URL may
+	// enter the document batch and no document may be forwarded per-URL.
+	if runtime.GOOS != "darwin" {
+		t.Skip("the macOS handler documents path is darwin-only")
+	}
+	h := compileOpenFilesHarness(t)
+
+	cmd := exec.Command(h.binary, "warm-mixed", h.documentsDir)
+	cmd.Env = append(os.Environ(),
+		"STUB_ARGV_LOG="+h.stubArgvLog,
+		"BRROUTER_HANDLER_LOG="+h.handlerLog,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("warm-mixed harness failed: %v\n%s", err, out)
+	}
+
+	// 2 spawns: one batched documents spawn, one web-URL spawn. Poll
+	// until the web line landed — the two spawns append independently.
+	webLine := "https://mixed.example/x"
+	pollUntilLineLogged(t, h.stubArgvLog, webLine)
+	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir, 2)
+
+	spawnCount, webCount := countSpawnsAndLine(t, h.stubArgvLog, webLine)
+	if spawnCount != 2 {
+		t.Errorf("spawn count = %d, want 2 (batched documents + single web URL)", spawnCount)
+	}
+	if webCount != 1 {
+		t.Errorf("web URL forwarded %d times, want exactly once per-URL", webCount)
+	}
+}
+
+// pollUntilLineLogged re-reads the stub log until the wanted line has
+// landed or the deadline passes (spawns append independently).
+func pollUntilLineLogged(t *testing.T, log, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if containsLine(readArgvFile(t, log), want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// countSpawnsAndLine returns the spawn count and how often the wanted
+// line appears in the stub log.
+func countSpawnsAndLine(t *testing.T, log, want string) (int, int) {
+	t.Helper()
+	spawnCount, wantCount := 0, 0
+	for _, line := range readArgvFile(t, log) {
+		if line == "open" {
+			spawnCount++
+		}
+		if line == want {
+			wantCount++
+		}
+	}
+	return spawnCount, wantCount
 }

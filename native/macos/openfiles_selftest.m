@@ -141,6 +141,12 @@ int main(int argc, const char *argv[]) {
 				fprintf(stderr, "FAIL dispatchRawAppleEvent (%d)\n", status);
 				return 3;
 			}
+		} else if ([mode isEqualToString:@"warm-mixed"]) {
+			// The header hands openURLs: ANY URLs — documents AND web
+			// schemes. A mixed array must split: documents batch into
+			// one spawn; the web URL keeps its per-URL spawn.
+			NSURL *web = [NSURL URLWithString:@"https://mixed.example/x"];
+			[delegate application:application openURLs:@[first, web, second]];
 		} else {
 			// Delegate-contract delivery: the exact selector AppKit
 			// itself calls after servicing a kAEOpenDocuments event,
@@ -170,18 +176,27 @@ int main(int argc, const char *argv[]) {
 		}
 		NSString *wantFirst = [first absoluteString];
 		NSString *wantSecond = [second absoluteString];
-		int firstCount = 0, secondCount = 0, spawnCount = 0;
+		NSString *wantWeb = @"https://mixed.example/x";
+		int firstCount = 0, secondCount = 0, spawnCount = 0, webCount = 0;
 		for (NSString *line in [logged componentsSeparatedByString:@"\n"]) {
 			if ([line isEqualToString:@"open"]) spawnCount++;
 			if ([line isEqualToString:wantFirst]) firstCount++;
 			if ([line isEqualToString:wantSecond]) secondCount++;
+			if ([line isEqualToString:wantWeb]) webCount++;
 		}
-		if (spawnCount != 1) {
-			fprintf(stderr, "FAIL spawns=%d — documents must arrive as one batched spawn\n", spawnCount);
+		// Documents must arrive as ONE batched spawn. In the mixed
+		// scenario the web URL adds exactly one more spawn of its own.
+		int wantSpawns = [mode isEqualToString:@"warm-mixed"] ? 2 : 1;
+		if (spawnCount != wantSpawns) {
+			fprintf(stderr, "FAIL spawns=%d want=%d\n", spawnCount, wantSpawns);
 			return 3;
 		}
 		if (firstCount != 1 || secondCount != 1) {
 			fprintf(stderr, "FAIL forwards first=%d second=%d\n", firstCount, secondCount);
+			return 3;
+		}
+		if ([mode isEqualToString:@"warm-mixed"] && webCount != 1) {
+			fprintf(stderr, "FAIL web forwards=%d want=1\n", webCount);
 			return 3;
 		}
 
