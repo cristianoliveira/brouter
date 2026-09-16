@@ -581,25 +581,34 @@ void ForwardDocumentsShim(RecentActivity *activity, NSString *entryPoint,
 
 @end
 
+// IsDocumentArgument classifies one cold-launch argument: file URLs
+// and path-shaped strings are documents; anything else is a web URL.
+// Existence is NOT consulted — a missing path must reach brouter and
+// come back as a visible, redacted error, never disappear in silence.
+static BOOL IsDocumentArgument(NSString *argument) {
+	if ([argument hasPrefix:@"file://"]) {
+		return YES;
+	}
+	if ([argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
+		return NO;
+	}
+	return [argument hasPrefix:@"/"] || [argument hasPrefix:@"~"] ||
+		[argument containsString:@"/"];
+}
+
 int main(int argc, const char *argv[]) {
 	@autoreleasepool {
 		NSMutableArray<NSString *> *argvURLs = [NSMutableArray array];
 		for (NSInteger i = 1; i < argc; i++) {
 			NSString *argument = [NSString stringWithUTF8String:argv[i]];
 			// Cold launch: web URLs ride argv as before; local documents
-			// arrive as file:// URLs (LaunchServices handoff) or as plain
-			// paths (command line, open -a). Existence is NOT a filter:
-			// a path-looking argument — including one that does not
-			// exist — is forwarded so brouter reports it visibly
-			// (redacted), never dropped in silence. Only a bare token
-			// with no path shape is ignored: LaunchServices can never
-			// hand one over, and the policy for it lives in brouter.
-			BOOL isWebURL = [argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"];
-			BOOL isFileURL = [argument hasPrefix:@"file://"];
-			BOOL looksLikePath = [argument hasPrefix:@"/"] ||
-				[argument hasPrefix:@"~"] ||
-				[argument containsString:@"/"];
-			if (isWebURL || isFileURL || looksLikePath) {
+			// arrive as file:// URLs (LaunchServices handoff) or as
+			// plain paths (command line, open -a) — missing ones
+			// included, so brouter reports them visibly. Bare tokens
+			// with no path shape are ignored: LaunchServices can never
+			// hand one over, and the policy for them lives in brouter.
+			if (IsDocumentArgument(argument) ||
+				[argument hasPrefix:@"http://"] || [argument hasPrefix:@"https://"]) {
 				[argvURLs addObject:argument];
 			}
 		}
@@ -614,9 +623,7 @@ int main(int argc, const char *argv[]) {
 			NSMutableArray<NSString *> *webURLs = [NSMutableArray array];
 			NSMutableArray<NSString *> *documents = [NSMutableArray array];
 			for (NSString *argument in argvURLs) {
-				BOOL isDocument = [argument hasPrefix:@"file://"] ||
-					[[NSFileManager defaultManager] fileExistsAtPath:argument];
-				[isDocument ? documents : webURLs addObject:argument];
+				[IsDocumentArgument(argument) ? documents : webURLs addObject:argument];
 			}
 			if (webURLs.count > 0) {
 				ForwardURLsShim(activity, @"argv", webURLs);

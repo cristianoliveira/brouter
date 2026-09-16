@@ -346,9 +346,9 @@ func TestMacosHandlerForwardsLocalDocumentsThroughStubBrouter(t *testing.T) {
 	// one embedded-brouter spawn per file, spaces and unicode intact.
 	// Policy (existence, extension, redacted errors) stays in brouter.
 	app := filepath.Join("..", "dist", "BrouterHandler.app")
-	if _, err := os.Stat(filepath.Join(app, "Contents/MacOS/BrouterHandler")); err != nil {
-		t.Fatalf("bundle not built: %v", err)
-	}
+	// Rebuild for this test: a stale dist binary would test yesterday's
+	// shim, not the source under review.
+	buildBundle(t)
 
 	stubDir := t.TempDir()
 	stubScript := stubBrouterScript(filepath.Join(stubDir, "argv.log"))
@@ -393,7 +393,7 @@ func assertForwardedInputs(t *testing.T, log string, wantSpawns int, inputs ...s
 		}
 	}
 	if spawnCount != wantSpawns {
-		t.Errorf("spawn count = %d, want %d", spawnCount, wantSpawns)
+		t.Errorf("spawn count = %d, want %d; log lines = %q", spawnCount, wantSpawns, argv)
 	}
 	if len(forwarded) != len(inputs) {
 		t.Fatalf("forwarded inputs = %v, want exactly %v", forwarded, inputs)
