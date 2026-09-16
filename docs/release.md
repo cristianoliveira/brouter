@@ -33,7 +33,18 @@ transfer, Developer ID signing, notarization, Gatekeeper acceptance, or a
 complete platform matrix. The macOS app is arm64-only; Intel artifacts are
 not produced.
 
-## Release side effect
+## Trust boundaries and release side effect
+
+The workflow validates the exact `vX.Y.Z` tag before using it. Every checkout
+sets `persist-credentials: false`, so repository contents cannot reuse a
+checkout token. The final job verifies every downloaded archive before writing
+`SHA256SUMS`; the token is exposed only to the final fixed `gh release create`
+command, never while the repository helper runs.
+
+Repository administrators must restrict who can create, move, or delete `v*`
+tags (and require the normal protected-branch/review policy for release
+changes). An authorized tag is still subject to the strict validator and
+`--verify-tag` check.
 
 The final job has `contents: write` and uses `gh release create --draft
 --verify-tag`. It creates a DRAFT release only. It does not publish the

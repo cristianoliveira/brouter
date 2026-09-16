@@ -13,6 +13,7 @@ usage() {
 usage:
   release-artifacts.sh validate-tag TAG
   release-artifacts.sh build TAG TARGET OUTPUT_DIR
+  release-artifacts.sh verify TAG ARTIFACT_DIR
   release-artifacts.sh manifest TAG ARTIFACT_DIR
 
 TARGET is one of: linux-x86_64, linux-aarch64, darwin-arm64, darwin-handler-arm64.
@@ -75,20 +76,57 @@ import sys
 import tarfile
 
 archive, expected_root, version = sys.argv[1:]
+
+def unsafe_path(path):
+    return path.startswith("/") or ".." in path.split("/")
+
 with tarfile.open(archive, "r:gz") as tar:
-    names = tar.getnames()
+    members = tar.getmembers()
+    names = [member.name for member in members]
     required = {
         expected_root,
         expected_root + "/VERSION",
     }
     if not required.issubset(names):
         raise SystemExit(f"archive missing required entries: {archive}")
-    if any(name.startswith("/") or ".." in name.split("/") for name in names):
-        raise SystemExit(f"archive contains unsafe path: {archive}")
+    if len(names) != len(set(names)):
+        raise SystemExit(f"archive contains duplicate entries: {archive}")
+    for member in members:
+        if unsafe_path(member.name):
+            raise SystemExit(f"archive contains unsafe path: {archive}")
+        if member.issym() or member.islnk():
+            if unsafe_path(member.linkname):
+                raise SystemExit(f"archive contains unsafe link: {archive}")
+            raise SystemExit(f"archive contains link entry: {archive}")
+        if not (member.isdir() or member.isreg()):
+            raise SystemExit(f"archive contains unsupported entry: {archive}")
     stamped = tar.extractfile(expected_root + "/VERSION")
     if stamped is None or stamped.read().decode().strip() != version:
         raise SystemExit(f"archive has wrong VERSION: {archive}")
 PY
+}
+
+verify_artifacts() {
+	local tag=$1 dir=$2 version
+	version=$(validate_tag "$tag")
+	[[ -d "$dir" ]] || die "artifact directory does not exist: $dir"
+	local expected=(
+		"brouter-${tag}-linux-x86_64.tar.gz"
+		"brouter-${tag}-linux-aarch64.tar.gz"
+		"brouter-${tag}-darwin-arm64.tar.gz"
+		"brouter-handler-${tag}-darwin-arm64.tar.gz"
+	)
+	local name root
+	for name in "${expected[@]}"; do
+		case "$name" in
+		brouter-handler-*) root="brouter-handler-${version}-darwin-arm64" ;;
+		brouter-*-linux-x86_64.tar.gz) root="brouter-${version}-linux-x86_64" ;;
+		brouter-*-linux-aarch64.tar.gz) root="brouter-${version}-linux-aarch64" ;;
+		brouter-*-darwin-arm64.tar.gz) root="brouter-${version}-darwin-arm64" ;;
+		esac
+		[[ -f "$dir/$name" ]] || die "missing expected artifact: $name"
+		verify_archive "$dir/$name" "$root" "$version"
+	done
 }
 
 build_cli() (
@@ -148,19 +186,14 @@ build() {
 }
 
 manifest() {
-	local tag=$1 dir=$2 version
-	version=$(validate_tag "$tag")
-	[[ -d "$dir" ]] || die "artifact directory does not exist: $dir"
+	local tag=$1 dir=$2
+	verify_artifacts "$tag" "$dir"
 	local expected=(
 		"brouter-${tag}-linux-x86_64.tar.gz"
 		"brouter-${tag}-linux-aarch64.tar.gz"
 		"brouter-${tag}-darwin-arm64.tar.gz"
 		"brouter-handler-${tag}-darwin-arm64.tar.gz"
 	)
-	local name
-	for name in "${expected[@]}"; do
-		[[ -f "$dir/$name" ]] || die "missing expected artifact: $name"
-	done
 	shopt -s nullglob
 	local files=("$dir"/*.tar.gz)
 	shopt -u nullglob
@@ -179,9 +212,12 @@ validate-tag)
 build)
 	[[ $# -eq 4 ]] || { usage; exit 2; }
 build "$2" "$3" "$4" ;;
+verify)
+	[[ $# -eq 3 ]] || { usage; exit 2; }
+	verify_artifacts "$2" "$3" ;;
 manifest)
 	[[ $# -eq 3 ]] || { usage; exit 2; }
-manifest "$2" "$3" ;;
+	manifest "$2" "$3" ;;
 *)
 	usage
 	exit 2

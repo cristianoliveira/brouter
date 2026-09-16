@@ -75,10 +75,14 @@ func TestReleaseManifestIsSortedByFilename(t *testing.T) {
 		"brouter-v1.2.3-darwin-arm64.tar.gz",
 		"brouter-handler-v1.2.3-darwin-arm64.tar.gz",
 	}
+	roots := map[string]string{
+		"brouter-v1.2.3-linux-x86_64.tar.gz":         "brouter-1.2.3-linux-x86_64",
+		"brouter-v1.2.3-linux-aarch64.tar.gz":        "brouter-1.2.3-linux-aarch64",
+		"brouter-v1.2.3-darwin-arm64.tar.gz":         "brouter-1.2.3-darwin-arm64",
+		"brouter-handler-v1.2.3-darwin-arm64.tar.gz": "brouter-handler-1.2.3-darwin-arm64",
+	}
 	for _, name := range names {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeValidArchive(t, filepath.Join(dir, name), roots[name], "1.2.3")
 	}
 
 	output, err := runReleaseHelper(t, "manifest", "v1.2.3", dir)
@@ -97,6 +101,105 @@ func TestReleaseManifestIsSortedByFilename(t *testing.T) {
 	sort.Strings(expected)
 	if strings.Join(actual, "\n") != strings.Join(expected, "\n") {
 		t.Errorf("manifest filenames = %v, want sorted %v", actual, expected)
+	}
+}
+
+func TestReleaseVerifiesDownloadedArchives(t *testing.T) {
+	// Given all supported archives with the expected roots and VERSION files,
+	// verification accepts the downloaded artifact set.
+	dir := t.TempDir()
+	archives := map[string]string{
+		"brouter-v1.2.3-linux-x86_64.tar.gz":         "brouter-1.2.3-linux-x86_64",
+		"brouter-v1.2.3-linux-aarch64.tar.gz":        "brouter-1.2.3-linux-aarch64",
+		"brouter-v1.2.3-darwin-arm64.tar.gz":         "brouter-1.2.3-darwin-arm64",
+		"brouter-handler-v1.2.3-darwin-arm64.tar.gz": "brouter-handler-1.2.3-darwin-arm64",
+	}
+	for name, root := range archives {
+		writeValidArchive(t, filepath.Join(dir, name), root, "1.2.3")
+	}
+	if output, err := runReleaseHelper(t, "verify", "v1.2.3", dir); err != nil {
+		t.Fatalf("verification failed: %v\n%s", err, output)
+	}
+}
+
+func TestReleaseRejectsMalformedDownloadedArchive(t *testing.T) {
+	dir := t.TempDir()
+	archives := map[string]string{
+		"brouter-v1.2.3-linux-x86_64.tar.gz":         "brouter-1.2.3-linux-x86_64",
+		"brouter-v1.2.3-linux-aarch64.tar.gz":        "brouter-1.2.3-linux-aarch64",
+		"brouter-v1.2.3-darwin-arm64.tar.gz":         "brouter-1.2.3-darwin-arm64",
+		"brouter-handler-v1.2.3-darwin-arm64.tar.gz": "brouter-handler-1.2.3-darwin-arm64",
+	}
+	for name, root := range archives {
+		writeValidArchive(t, filepath.Join(dir, name), root, "1.2.3")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "brouter-v1.2.3-linux-x86_64.tar.gz"), []byte("not a gzip archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := runReleaseHelper(t, "verify", "v1.2.3", dir); err == nil {
+		t.Fatalf("malformed archive verified successfully: %s", output)
+	}
+}
+
+func TestReleaseRejectsTraversalArchive(t *testing.T) {
+	dir := t.TempDir()
+	archives := map[string]string{
+		"brouter-v1.2.3-linux-x86_64.tar.gz":         "brouter-1.2.3-linux-x86_64",
+		"brouter-v1.2.3-linux-aarch64.tar.gz":        "brouter-1.2.3-linux-aarch64",
+		"brouter-v1.2.3-darwin-arm64.tar.gz":         "brouter-1.2.3-darwin-arm64",
+		"brouter-handler-v1.2.3-darwin-arm64.tar.gz": "brouter-handler-1.2.3-darwin-arm64",
+	}
+	for name, root := range archives {
+		writeValidArchive(t, filepath.Join(dir, name), root, "1.2.3")
+	}
+	writeArchiveWithExtraEntry(t,
+		filepath.Join(dir, "brouter-v1.2.3-linux-x86_64.tar.gz"),
+		"brouter-1.2.3-linux-x86_64", "1.2.3", "../escape")
+	if output, err := runReleaseHelper(t, "verify", "v1.2.3", dir); err == nil {
+		t.Fatalf("traversal archive verified successfully: %s", output)
+	}
+}
+
+func writeValidArchive(t *testing.T, path, root, version string) {
+	t.Helper()
+	writeArchiveWithExtraEntry(t, path, root, version, "")
+}
+
+func writeArchiveWithExtraEntry(t *testing.T, path, root, version, extraName string) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := gzip.NewWriter(file)
+	archive := tar.NewWriter(compressed)
+	if err := archive.WriteHeader(&tar.Header{Name: root, Mode: 0o755, Typeflag: tar.TypeDir}); err != nil {
+		t.Fatal(err)
+	}
+	versionBytes := []byte(version + "\n")
+	if err := archive.WriteHeader(&tar.Header{Name: root + "/VERSION", Mode: 0o644, Size: int64(len(versionBytes))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archive.Write(versionBytes); err != nil {
+		t.Fatal(err)
+	}
+	if extraName != "" {
+		extraBytes := []byte("extra")
+		if err := archive.WriteHeader(&tar.Header{Name: extraName, Mode: 0o644, Size: int64(len(extraBytes))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := archive.Write(extraBytes); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

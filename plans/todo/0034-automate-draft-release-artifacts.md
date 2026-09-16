@@ -19,20 +19,21 @@ A validated `vX.Y.Z` tag runs the pinned release checks and produces determinist
 - [x] A `vX.Y.Z` tag is validated before its version is used; malformed tags fail closed and no tag value is evaluated as shell code.
 - [x] Tag-triggered jobs run the normal gate on Linux and macOS plus the release-required formatting, vet, static analysis, race, coverage, vulnerability and architecture checks with pinned tool versions.
 - [x] Build only the supported artifacts: Linux x86_64 and aarch64 CLI archives, macOS arm64 CLI archive, and macOS arm64 app-bundle archive. Intel and other platform artifacts are not produced or implied.
-- [x] Archives have deterministic names and contents, include the validated version, and are checked before a sorted SHA-256 manifest is generated.
+- [x] Archives have deterministic names and contents, include the validated version, and every downloaded archive is revalidated for safe paths, entry types, required root/VERSION and stamped version before a sorted SHA-256 manifest is generated.
 - [x] CLI and macOS app metadata receive version stamping from the validated tag; local builds remain identifiable as development builds.
+- [x] Every checkout disables persisted credentials; repository helpers run before token exposure, and only the final fixed `gh release create` command receives `GH_TOKEN`.
 - [x] Only the final release job has `contents: write`; it creates a DRAFT release with `--verify-tag`, and no workflow step creates tags or publishes releases.
 - [x] Archive, checksum, version, malformed-tag and failure paths have focused local tests; workflow YAML is syntax-checked and tool-validated.
 
 ## Verification
 
-Implemented in `.github/workflows/release.yml`, `scripts/release-artifacts.sh`, and the CLI version stamp. The helper uses `trimpath`, a normalized tar/gzip writer, validated target allowlists, archive-content checks and sorted SHA-256 output. macOS app builds reuse `scripts/build-macos-handler.sh` and retain ad-hoc signing.
+Implemented in `.github/workflows/release.yml`, `scripts/release-artifacts.sh`, and the CLI version stamp. The helper uses `trimpath`, a normalized tar/gzip writer, validated target allowlists, archive-content checks and sorted SHA-256 output. The final job revalidates downloaded archives before manifest generation. macOS app builds reuse `scripts/build-macos-handler.sh` and retain ad-hoc signing.
 
 Automated and package-build evidence is build-only; it does not establish runtime behavior, cross-compiled platform behavior, Developer ID signing, notarization, Gatekeeper transfer, or release approval.
 
 ## Remaining gates
 
-- Run the workflow from an authorized real `vX.Y.Z` tag only after explicit release approval; this task does not create tags.
+- Configure protected `v*` tag rules so only authorized maintainers can create, move, or delete release tags; run the workflow only after explicit release approval. This task does not create tags.
 - Inspect the resulting DRAFT release and archive contents/checksums on GitHub.
 - Keep real-platform GUI, browser/default-handler, install/update/remove/restore and nix-darwin lifecycle acceptance in TASK-0015, TASK-0019 and TASK-0024.
 - Developer ID signing, notarization, Gatekeeper transfer, publication, and a full release matrix remain unverified and out of scope.
