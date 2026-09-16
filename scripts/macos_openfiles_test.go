@@ -84,7 +84,7 @@ func TestOpenFilesDelegateForwardsWarmDocuments(t *testing.T) {
 	}
 	h := compileOpenFilesHarness(t)
 
-	cmd := exec.Command(h.binary, h.documentsDir)
+	cmd := exec.Command(h.binary, "warm", h.documentsDir)
 	cmd.Env = append(os.Environ(),
 		"STUB_ARGV_LOG="+h.stubArgvLog,
 		"BRROUTER_HANDLER_LOG="+h.handlerLog,
@@ -170,4 +170,30 @@ func assertForwardedOncePerFixtureDocument(t *testing.T, stubLog, dir string) {
 			t.Errorf("document %q forwarded %d times, want one spawn per document", path, count)
 		}
 	}
+}
+
+func TestOpenFilesRealAppleEventDispatchReachesOpenURLs(t *testing.T) {
+	// REAL dispatch evidence: the harness builds a genuine
+	// kAEOpenDocuments Apple Event (direct object = typeFileURL list)
+	// and dispatches it through NSAppleEventManager's public raw
+	// dispatch — the same machinery NSApplication services for the OS.
+	// AppKit's installed odoc handler then routes to the delegate's
+	// -application:openURLs:. This is not a direct selector call; the
+	// only hop outside reach remains the live LaunchServices handoff
+	// from an installed bundle (UNTESTED).
+	if runtime.GOOS != "darwin" {
+		t.Skip("the macOS handler documents path is darwin-only")
+	}
+	h := compileOpenFilesHarness(t)
+
+	cmd := exec.Command(h.binary, "warm-dispatch", h.documentsDir)
+	cmd.Env = append(os.Environ(),
+		"STUB_ARGV_LOG="+h.stubArgvLog,
+		"BRROUTER_HANDLER_LOG="+h.handlerLog,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("warm-dispatch harness failed: %v\n%s", err, out)
+	}
+
+	assertForwardedOncePerFixtureDocument(t, h.stubArgvLog, h.documentsDir)
 }

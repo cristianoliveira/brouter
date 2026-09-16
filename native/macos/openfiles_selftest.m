@@ -48,12 +48,13 @@ static NSString *ReadFile(NSString *path) {
 
 int main(int argc, const char *argv[]) {
 	@autoreleasepool {
-		if (argc < 2) {
-			return Fail("documents directory argument required");
+		if (argc < 3) {
+			return Fail("mode and documents directory arguments required");
 		}
+		NSString *mode = [NSString stringWithUTF8String:argv[1]];
 		NSString *logPath = [NSString stringWithUTF8String:getenv("STUB_ARGV_LOG")];
 
-		NSString *docDir = [NSString stringWithUTF8String:argv[1]];
+		NSString *docDir = [NSString stringWithUTF8String:argv[2]];
 		// Build the documents from the directory's own names: the
 		// filesystem's unicode spelling is the contract, not this
 		// source literal's.
@@ -99,9 +100,53 @@ int main(int argc, const char *argv[]) {
 			return Fail("deprecated application:openFile: must not be implemented");
 		}
 
-		// Drive the exact selector AppKit itself calls after servicing a
-		// kAEOpenDocuments event, with several file URLs at once.
-		[delegate application:application openURLs:@[first, second]];
+		if ([mode isEqualToString:@"warm-dispatch"]) {
+			// REAL dispatch: build a genuine kAEOpenDocuments Apple
+			// Event (direct object = a typeFileURL list) and hand it to
+			// NSAppleEventManager's public raw dispatch — the same
+			// machinery NSApplication services for the OS. The event
+			// routes through AppKit's installed odoc handler to the
+			// delegate selector below; nothing here is a direct
+			// selector call, and no LaunchServices state is touched.
+			ProcessSerialNumber psn = {0, kCurrentProcess};
+			NSAppleEventDescriptor *target =
+				[NSAppleEventDescriptor descriptorWithDescriptorType:typeProcessSerialNumber
+					bytes:&psn length:sizeof(psn)];
+			NSAppleEventDescriptor *event =
+				[NSAppleEventDescriptor appleEventWithEventClass:kCoreEventClass
+					eventID:kAEOpenDocuments
+					targetDescriptor:target
+					returnID:kAutoGenerateReturnID
+					transactionID:kAnyTransactionID];
+			NSAppleEventDescriptor *list = [NSAppleEventDescriptor listDescriptor];
+			NSUInteger index = 1;
+			for (NSURL *url in @[first, second]) {
+				NSData *data = [[url absoluteString] dataUsingEncoding:NSUTF8StringEncoding];
+				[list insertDescriptor:[NSAppleEventDescriptor
+					descriptorWithDescriptorType:typeFileURL data:data]
+					atIndex:index++];
+			}
+			[event setParamDescriptor:list forKeyword:keyDirectObject];
+
+			AppleEvent reply;
+			if (AECreateDesc(typeNull, NULL, 0, &reply) != noErr) {
+				return Fail("reply descriptor init failed");
+			}
+			OSStatus status = [[NSAppleEventManager sharedAppleEventManager]
+				dispatchRawAppleEvent:[event aeDesc]
+				withRawReply:&reply
+				handlerRefCon:NULL];
+			AEDisposeDesc(&reply);
+			if (status != noErr) {
+				fprintf(stderr, "FAIL dispatchRawAppleEvent (%d)\n", status);
+				return 3;
+			}
+		} else {
+			// Delegate-contract delivery: the exact selector AppKit
+			// itself calls after servicing a kAEOpenDocuments event,
+			// with several file URLs at once.
+			[delegate application:application openURLs:@[first, second]];
+		}
 
 		// The shim spawns asynchronously; poll for the stub's log.
 		NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
