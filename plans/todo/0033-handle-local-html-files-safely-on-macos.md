@@ -1,5 +1,5 @@
 ---
-id: TASK-0032
+id: TASK-0033
 title: Handle local HTML files safely on macOS
 status: todo
 depends_on: []
