@@ -226,11 +226,8 @@ func validateLog(path string, spec *logSpec) (*LogConfig, error) {
 	if spec.Path != "" && !filepath.IsAbs(spec.Path) && !strings.HasPrefix(spec.Path, "~/") {
 		return nil, fmt.Errorf("%s: log: path must be absolute or start with ~/ (input not shown)", path)
 	}
-	if spec.MaxBytes != 0 && spec.MaxBytes < 1024 {
-		return nil, fmt.Errorf("%s: log: max_bytes must be 0 (default) or at least 1024", path)
-	}
-	if spec.MaxFiles != 0 && (spec.MaxFiles < 1 || spec.MaxFiles > 100) {
-		return nil, fmt.Errorf("%s: log: max_files must be 0 (default) or between 1 and 100", path)
+	if err := validateLogBounds(path, spec); err != nil {
+		return nil, err
 	}
 	return &LogConfig{
 		Enabled:  true,
@@ -239,6 +236,18 @@ func validateLog(path string, spec *logSpec) (*LogConfig, error) {
 		MaxBytes: spec.MaxBytes,
 		MaxFiles: spec.MaxFiles,
 	}, nil
+}
+
+// validateLogBounds keeps the log bounded even when misconfigured: the
+// zero values mean the package defaults, never unbounded.
+func validateLogBounds(path string, spec *logSpec) error {
+	if spec.MaxBytes != 0 && spec.MaxBytes < 1024 {
+		return fmt.Errorf("%s: log: max_bytes must be 0 (default) or at least 1024", path)
+	}
+	if spec.MaxFiles != 0 && (spec.MaxFiles < 1 || spec.MaxFiles > 100) {
+		return fmt.Errorf("%s: log: max_files must be 0 (default) or between 1 and 100", path)
+	}
+	return nil
 }
 
 func validate(path string, file fileFormat) (*Config, error) {
