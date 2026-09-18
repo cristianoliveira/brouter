@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/cristianoliveira/brouter/internal/domain"
 	"github.com/cristianoliveira/brouter/internal/infra/config"
 	"github.com/cristianoliveira/brouter/internal/infra/launch"
 	"github.com/cristianoliveira/brouter/internal/infra/localfile"
 	"github.com/cristianoliveira/brouter/internal/infra/routecmd"
+	"github.com/cristianoliveira/brouter/internal/infra/routelog"
 )
 
 // runOpen implements the body of `brouter open URL`: it evaluates the
@@ -40,6 +42,13 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 		return code
 	}
 
+	// The opt-in routing log is evidence, not behavior: a nil logger
+	// (absent or disabled [log]) costs nothing, and emit failures are
+	// redacted warnings that never change routing or exit codes. Local
+	// documents bypass routing entirely and stay unlogged.
+	logger := routelog.New(cfg.Log, stderr)
+	resolveStart := time.Now()
+
 	// Local documents bypass all URL routing (TASK-0033): they go
 	// straight to the default configured browser as encoded file URLs.
 	// Every other input keeps the exact routing order below.
@@ -57,7 +66,7 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 	// TASK-0029. Only the exact @default line defers to the static
 	// rules; every command failure is visible and stops the open —
 	// never a silent fallback.
-	if code, handled := openByRouteCommand(cfg, path, rawURL, stderr, stdout); handled {
+	if code, handled := openByRouteCommand(cfg, path, rawURL, stderr, stdout, logger, resolveStart); handled {
 		return code
 	}
 
@@ -75,19 +84,19 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 		return exitFailure
 	}
 
-	return launchTarget(target, string(decision.Target), rawURL, stderr, stdout)
+	return launchTarget(target, string(decision.Target), rawURL, stderr, stdout, logger, resolveStart)
 }
 
 // launchCommandTarget validates a command decision against the config
 // snapshot and launches it. An unknown target is a visible failure —
 // it never silently falls back to static rules.
-func launchCommandTarget(cfg *config.Config, res routecmd.Result, rawURL string, stderr, stdout io.Writer) int {
+func launchCommandTarget(cfg *config.Config, res routecmd.Result, rawURL string, stderr, stdout io.Writer, logger *routelog.Logger, resolveStart time.Time) int {
 	def, defined := cfg.Targets[res.Route]
 	if !defined {
 		fmt.Fprintf(stderr, "route_command: unknown target (not defined in browsers)\n")
 		return exitFailure
 	}
-	return launchTarget(def, res.Route, rawURL, stderr, stdout)
+	return launchTarget(def, res.Route, rawURL, stderr, stdout, logger, resolveStart)
 }
 
 // loadConfigForOpen resolves the config path and loads the config.
@@ -106,18 +115,37 @@ func loadConfigForOpen(configPath string, stderr io.Writer) (string, *config.Con
 	return path, cfg, exitSuccess, true
 }
 
-// launchTarget resolves and launches one already-validated target.
-func launchTarget(def config.TargetDefinition, name, rawURL string, stderr, stdout io.Writer) int {
+// launchTarget resolves and launches one already-validated target,
+// then records the open in the opt-in routing log: resolve_ms covers
+// the decision (command or static evaluation), launch_ms the browser
+// spawn wait. Launch failures are logged with outcome=launch-failed —
+// the record documents what happened, it never replaces the visible
+// error or the exit status.
+func launchTarget(def config.TargetDefinition, name, rawURL string, stderr, stdout io.Writer, logger *routelog.Logger, resolveStart time.Time) int {
 	plan, err := launch.Resolve(def, name, launch.SystemEnv())
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return exitFailure
 	}
 
-	if err := launch.Launch(plan, rawURL, nil); err != nil {
-		fmt.Fprintf(stderr, "open failed: %v\n", err)
+	launchStart := time.Now()
+	launchErr := launch.Launch(plan, rawURL, nil)
+	if launchErr != nil {
+		fmt.Fprintf(stderr, "open failed: %v\n", launchErr)
+		logger.Emit(routelog.Entry{
+			Target: name, Outcome: "launch-failed",
+			ResolveMS: time.Since(resolveStart).Milliseconds(),
+			LaunchMS:  time.Since(launchStart).Milliseconds(),
+			RawURL:    rawURL, Error: launchErr.Error(),
+		})
 		return exitFailure
 	}
+	logger.Emit(routelog.Entry{
+		Target: name, Outcome: "launched",
+		ResolveMS: time.Since(resolveStart).Milliseconds(),
+		LaunchMS:  time.Since(launchStart).Milliseconds(),
+		RawURL:    rawURL,
+	})
 
 	fmt.Fprintf(stdout, "launched: %s (%s)\n", name, plan.Detail)
 	return exitSuccess
@@ -126,7 +154,7 @@ func launchTarget(def config.TargetDefinition, name, rawURL string, stderr, stdo
 // openByRouteCommand consults the external routing command and, when
 // it decided, launches its target. handled is false only for a
 // @default defer, which falls through to the static router.
-func openByRouteCommand(cfg *config.Config, configPath, rawURL string, stderr, stdout io.Writer) (int, bool) {
+func openByRouteCommand(cfg *config.Config, configPath, rawURL string, stderr, stdout io.Writer, logger *routelog.Logger, resolveStart time.Time) (int, bool) {
 	if cfg.RouteCommand == nil {
 		return 0, false
 	}
@@ -137,7 +165,7 @@ func openByRouteCommand(cfg *config.Config, configPath, rawURL string, stderr, s
 	if !decided {
 		return 0, false
 	}
-	return launchCommandTarget(cfg, res, rawURL, stderr, stdout), true
+	return launchCommandTarget(cfg, res, rawURL, stderr, stdout, logger, resolveStart), true
 }
 
 // openDocumentBatchFromArgs runs the preflight-atomic document batch

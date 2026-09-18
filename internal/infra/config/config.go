@@ -61,12 +61,34 @@ type fileFormat struct {
 	Browsers     map[string]browserSpec `toml:"browsers"`
 	Rules        []ruleSpec             `toml:"rules"`
 	RouteCommand *routeCommandSpec      `toml:"route_command"`
+	Log          *logSpec               `toml:"log"`
 }
 
 // routeCommandSpec is the opt-in external routing command table. The
 // command is direct argv (executable first), never a shell string.
 type routeCommandSpec struct {
 	Command []string `toml:"command"`
+}
+
+// logSpec is the opt-in local routing log table. Zero values mean the
+// defaults documented on LogConfig; a missing table means disabled.
+type logSpec struct {
+	Enabled  bool   `toml:"enabled"`
+	Path     string `toml:"path"`
+	Host     bool   `toml:"host"`
+	MaxBytes int64  `toml:"max_bytes"`
+	MaxFiles int    `toml:"max_files"`
+}
+
+// LogConfig carries the validated routing-log settings. Full URLs are
+// never loggable: the URL field is always REDACTED, and the hostname
+// appears only when the user explicitly opts in with Host.
+type LogConfig struct {
+	Enabled  bool
+	Path     string
+	Host     bool
+	MaxBytes int64
+	MaxFiles int
 }
 
 // Config is the validated, domain-ready configuration.
@@ -77,6 +99,9 @@ type Config struct {
 	// RouteCommand is the direct argv of the opt-in external routing
 	// command (nil when not configured). It is never a shell string.
 	RouteCommand []string
+	// Log is the validated opt-in routing-log settings (nil when the
+	// table is absent, which means disabled).
+	Log *LogConfig
 }
 
 // DefaultPath returns the one documented Unix user configuration
@@ -187,6 +212,35 @@ func validateRouteCommand(path string, spec *routeCommandSpec, browsers map[stri
 	return errs
 }
 
+// validateLog checks the opt-in routing-log table's structure only:
+// nothing is resolved or written here. The explicit path must be
+// absolute or ~/-prefixed so GUI invocations without a shell resolve
+// the same file; bounds keep the log bounded even when misconfigured.
+func validateLog(path string, spec *logSpec) (*LogConfig, error) {
+	if spec == nil {
+		return nil, nil
+	}
+	if !spec.Enabled {
+		return &LogConfig{}, nil
+	}
+	if spec.Path != "" && !filepath.IsAbs(spec.Path) && !strings.HasPrefix(spec.Path, "~/") {
+		return nil, fmt.Errorf("%s: log: path must be absolute or start with ~/ (input not shown)", path)
+	}
+	if spec.MaxBytes != 0 && spec.MaxBytes < 1024 {
+		return nil, fmt.Errorf("%s: log: max_bytes must be 0 (default) or at least 1024", path)
+	}
+	if spec.MaxFiles != 0 && (spec.MaxFiles < 1 || spec.MaxFiles > 100) {
+		return nil, fmt.Errorf("%s: log: max_files must be 0 (default) or between 1 and 100", path)
+	}
+	return &LogConfig{
+		Enabled:  true,
+		Path:     spec.Path,
+		Host:     spec.Host,
+		MaxBytes: spec.MaxBytes,
+		MaxFiles: spec.MaxFiles,
+	}, nil
+}
+
 func validate(path string, file fileFormat) (*Config, error) {
 	fail := func(field string, format string, args ...any) error {
 		return fmt.Errorf("%s: %s: %s", path, field, fmt.Sprintf(format, args...))
@@ -200,9 +254,15 @@ func validate(path string, file fileFormat) (*Config, error) {
 
 	errs = append(errs, validateRouteCommand(path, file.RouteCommand, file.Browsers)...)
 
+	log, err := validateLog(path, file.Log)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	cfg := &Config{
 		Default: domain.Target(file.Default),
 		Targets: make(map[string]TargetDefinition, len(file.Browsers)),
+		Log:     log,
 	}
 	if file.RouteCommand != nil {
 		cfg.RouteCommand = file.RouteCommand.Command

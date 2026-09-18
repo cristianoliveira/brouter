@@ -14,6 +14,25 @@ brouter open URL        # or: echo URL | brouter open
 brouter open --config path/to/config.toml URL
 ```
 
+## Routing log (opt-in)
+
+`brouter open` can record one timestamped line per web-URL launch with
+the selected target, outcome, and per-stage durations — evidence for
+latency questions. It is local-only, disabled by default, and full URLs
+are never written: the URL field is always `REDACTED`.
+
+```toml
+[log]
+enabled = true
+# path = "/absolute/or/~/path/routing.log"   # default: $XDG_STATE_HOME/brouter/routing.log
+# host = false       # set true to include the lowercased hostname only
+# max_bytes = 1048576 # rotate threshold
+# max_files = 3      # rotated files kept
+```
+
+Write or rotation failures print one redacted warning and never change
+routing or exit codes.
+
 ## Quick start
 
 Prerequisites: either [Nix](https://nixos.org/) with flakes, or any Go
