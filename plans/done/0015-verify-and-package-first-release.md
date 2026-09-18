@@ -1,7 +1,7 @@
 ---
 id: TASK-0015
 title: Verify and package the first supported release
-status: doing
+status: done
 depends_on: [TASK-0004, TASK-0005, TASK-0010, TASK-0012, TASK-0013, TASK-0014]
 tags: [release, acceptance]
 ---
@@ -67,6 +67,26 @@ Still **UNTESTED**: real browsers/profiles and visible destinations; real Launch
 ## Relevant USER-ATTESTED evidence (2026-09-16)
 
 The user reports that the installed handler opened a harmless web URL, an HTML document, and a PDF in the intended browser, observed menu activity, and used Quit. This complements the bounded checks above but does not close the release task: the full release matrix, clean-environment lifecycle, defaults, signing/Gatekeeper transfer, and publication remain unverified.
+
+## Closure — USER-ACCEPTED DEFERRAL (2026-09-16)
+
+This task is closed by explicit user triage/deferral, not by a QA pass and not by inferring acceptance from automated or package evidence. The existing unchecked acceptance criteria remain intentionally unchecked.
+
+### Verified evidence retained
+
+- The first tag workflow run succeeded for `v0.1.0`, targeting main SHA `5c7d5d331a16920e8683a3b0fef09d5305f220c5`: [run 35130454143](https://github.com/cristianoliveira/brouter/actions/runs/35130454143).
+- The explicitly/manual-published release is `isDraft=false`, `publishedAt=2026-09-16T18:48:36Z`: [v0.1.0](https://github.com/cristianoliveira/brouter/releases/tag/v0.1.0).
+- It contains all five assets: `brouter-v0.1.0-linux-x86_64.tar.gz`, `brouter-v0.1.0-linux-aarch64.tar.gz`, `brouter-v0.1.0-darwin-arm64.tar.gz`, `brouter-handler-v0.1.0-darwin-arm64.tar.gz`, and `SHA256SUMS`.
+- Downloaded assets pass `sha256sum -c SHA256SUMS`; archive roots and `VERSION=0.1.0` inspect correctly; the manifest is sorted and covers all four archives. The app contains `_CodeSignature`, `CFBundleShortVersionString=0.1.0`, and `CFBundleVersion=010`; the workflow log records ad-hoc signing.
+- The user-attested installed session opened a harmless web URL, HTML, and PDF in the intended browser, showed menu activity, and used Quit. This is user evidence only; Kelly did not observe the session.
+
+### Deferred / unverified gates
+
+- The full real-platform end-to-end matrix remains unverified. The bounded CLI subset above passed for default, exact-host, subdomain, URL-regex, unmatched-default, malformed TOML, missing executable, and missing known-browser profile; those results do not establish real-browser, LaunchServices, or cross-platform runtime acceptance. Full cross-platform profile coverage and real-browser profile selection remain unverified; cold/warm launches and repeated OS URL delivery remain unverified.
+- Clean-environment install, explicit default selection, update, uninstall/restore, and multi-platform runtime behavior remain unverified.
+- Developer ID signing, Gatekeeper transfer, notarization, and a full release matrix remain unverified; the artifact has build-time ad-hoc signing only.
+- The published release body still contains stale “unpublished DRAFT” wording; it was not changed under this plans-only closure.
+- No protected `v*` tag ruleset was found, and no repository settings were changed; protected tag policy remains a future-release prerequisite.
 
 ## Non-goals
 Public release authorization, automatic updates, or expanding the support matrix.
