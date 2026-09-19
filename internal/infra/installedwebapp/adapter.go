@@ -127,9 +127,12 @@ func System() *Adapter { return NewAdapter(Environment{}) }
 func (a *Adapter) Discover() Result {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	finger := a.fingerprint()
-	if a.cacheSet && finger == a.finger {
-		return a.cached
+	var finger string
+	if a.cacheSet {
+		finger = a.fingerprint()
+		if finger == a.finger {
+			return a.cached
+		}
 	}
 	a.plans = make(map[string]launchSpec)
 	var entries []domainapp.Entry
@@ -148,6 +151,10 @@ func (a *Adapter) Discover() Result {
 		diagnostics = append(diagnostics, "installed-app catalog rejected malformed metadata")
 	}
 	result := Result{Catalog: catalog, Diagnostics: stableDiagnostics(diagnostics)}
+	// The first one-shot discovery deliberately avoids a second full root
+	// fingerprint pass. A reused adapter computes the fingerprint before its
+	// next scan; the empty initial fingerprint therefore causes one safe
+	// refresh before subsequent calls become cache hits.
 	a.cached, a.finger, a.cacheSet = result, finger, true
 	return result
 }
