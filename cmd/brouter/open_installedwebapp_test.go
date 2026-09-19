@@ -9,11 +9,15 @@ import (
 )
 
 type fakeAppDiscovery struct {
-	result   infraapps.Result
-	launched []string
+	result      infraapps.Result
+	discoveries int
+	launched    []string
 }
 
-func (f *fakeAppDiscovery) Discover() infraapps.Result { return f.result }
+func (f *fakeAppDiscovery) Discover() infraapps.Result {
+	f.discoveries++
+	return f.result
+}
 
 func (f *fakeAppDiscovery) Launch(plan domainapp.LaunchPlan, rawURL string) error {
 	f.launched = append(f.launched, plan.Token+"\x00"+rawURL)
@@ -75,5 +79,64 @@ target = "fake"
 	}
 	if got := readArgvLog(t, log); len(got) != 1 || got[0] != "https://chatgpt.com/share/abc" {
 		t.Fatalf("browser argv = %q", got)
+	}
+}
+
+func TestOpenExplicitRouteCommandSkipsInstalledAppDiscovery(t *testing.T) {
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	configPath := writeConfig(t, executableTargetConfig(browser)+`
+[route_command]
+command = ["/bin/sh", "-c", "printf 'fake'"]
+`)
+	discovery := &fakeAppDiscovery{}
+	var stdout, stderr bytes.Buffer
+
+	code := runOpenWithDiscovery(configPath, []string{"https://chatgpt.com/share/abc"}, bytes.NewReader(nil), &stdout, &stderr, discovery)
+	if code != exitSuccess || discovery.discoveries != 0 {
+		t.Fatalf("code=%d discoveries=%d stderr=%q", code, discovery.discoveries, stderr.String())
+	}
+	if got := readArgvLog(t, log); len(got) != 1 || got[0] != "https://chatgpt.com/share/abc" {
+		t.Fatalf("browser argv = %q", got)
+	}
+}
+
+func TestOpenDefaultDeferChecksInstalledWebAppBeforeConfiguredDefault(t *testing.T) {
+	app, err := domainapp.NewEntry("chatgpt", "https://chatgpt.com/", "https://chatgpt.com/", domainapp.NewLaunchPlan("chatgpt-plan"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := domainapp.NewCatalog([]domainapp.Entry{app})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	browser, _ := writeFakeBrowser(t, dir, 0)
+	configPath := writeConfig(t, executableTargetConfig(browser)+`
+[route_command]
+command = ["/bin/sh", "-c", "printf '@default'"]
+`)
+	discovery := &fakeAppDiscovery{result: infraapps.Result{Catalog: catalog}}
+	var stdout, stderr bytes.Buffer
+
+	code := runOpenWithDiscovery(configPath, []string{"https://chatgpt.com/share/abc"}, bytes.NewReader(nil), &stdout, &stderr, discovery)
+	if code != exitSuccess || len(discovery.launched) != 1 {
+		t.Fatalf("code=%d launched=%q stderr=%q", code, discovery.launched, stderr.String())
+	}
+}
+
+func TestOpenFallsBackToConfiguredDefaultWhenNoAppMatches(t *testing.T) {
+	dir := t.TempDir()
+	browser, log := writeFakeBrowser(t, dir, 0)
+	configPath := writeConfig(t, executableTargetConfig(browser))
+	discovery := &fakeAppDiscovery{result: infraapps.Result{Catalog: domainapp.Catalog{}}}
+	var stdout, stderr bytes.Buffer
+
+	code := runOpenWithDiscovery(configPath, []string{"https://other.example/"}, bytes.NewReader(nil), &stdout, &stderr, discovery)
+	if code != exitSuccess || len(discovery.launched) != 0 {
+		t.Fatalf("code=%d launched=%q stderr=%q", code, discovery.launched, stderr.String())
+	}
+	if got := readArgvLog(t, log); len(got) != 1 || got[0] != "https://other.example/" {
+		t.Fatalf("default argv = %q", got)
 	}
 }

@@ -21,6 +21,8 @@ func TestCatalogMatchesSameOriginAndScope(t *testing.T) {
 	}{
 		{name: "origin", url: "https://chatgpt.com/share/abc", want: "chatgpt"},
 		{name: "longest scope", url: "https://chatgpt.com/settings/profile", want: "chatgpt-settings"},
+		{name: "scope exact path", url: "https://chatgpt.com/settings", want: "chatgpt-settings"},
+		{name: "encoded separator stays outside scope", url: "https://chatgpt.com/settings%2Fprofile", want: "chatgpt"},
 		{name: "scope boundary", url: "https://chatgpt.com/settings-other", want: "chatgpt"},
 		{name: "lookalike host", url: "https://chatgpt.com.evil.test/", want: ""},
 		{name: "scheme", url: "http://chatgpt.com/", want: ""},

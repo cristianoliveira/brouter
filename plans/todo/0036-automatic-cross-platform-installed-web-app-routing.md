@@ -22,12 +22,13 @@ HTTP(S) routing can discover installed Brave and Chrome web apps on the
 currently supported macOS and Linux platforms without any new user
 configuration. A parsed, deterministic catalog participates in routing only
 after explicit routing decisions and before the configured default. Launch
-failures stay visible and never silently open a different browser. Entries without authoritative scope are skipped: `CrAppModeShortcutURL` and
+failures stay visible and never silently open a different browser. Entries
+without authoritative scope are skipped: `CrAppModeShortcutURL` and
 `start_url` are launch URLs, not manifest scopes, and brouter never fetches a
-manifest. The one macOS compatibility rule is a root `CrAppModeShortcutURL`:
-its normalized scope is the root of that exact origin because no narrower
-manifest scope can contain root; non-root shortcuts still require explicit
-scope.
+manifest. The one macOS compatibility rule is a root
+`CrAppModeShortcutURL`: its normalized scope is the root of that exact origin
+because no narrower manifest scope can contain root; non-root shortcuts still
+require explicit scope.
 
 ## Existing contracts this plan must preserve
 
@@ -91,8 +92,9 @@ left as a fixture-only placeholder.
   scope, app ID, known browser bundle identity, and launch information that
   the browser actually emits. A root `CrAppModeShortcutURL` has the narrowly
   safe exact-origin compatibility scope; non-root shortcut URLs without
-  explicit scope remain unsupported. Launch through a structured platform adapter using an opaque bundle/app
-  handle; the domain must not construct shell commands or infer identity from
+  explicit scope remain unsupported. Launch through a structured platform
+  adapter using an opaque bundle/app handle; the domain must not construct
+  shell commands or infer identity from
   a display name. A moved app must remain identifiable by its stable app ID,
   while an uninstalled app must not remain launchable from stale metadata.
 - **Linux:** discover generated Brave and Chrome `.desktop` launchers in the

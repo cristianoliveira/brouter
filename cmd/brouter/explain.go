@@ -20,6 +20,10 @@ import (
 // lives in the Cobra command layer (cli.go); args holds zero or one
 // positional URL.
 func runExplain(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runExplainWithDiscovery(configPath, args, stdin, stdout, stderr, infraapps.System())
+}
+
+func runExplainWithDiscovery(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, apps appDiscovery) int {
 	rawURL, ok := singleInput("explain", args, stdin, stderr)
 	if !ok {
 		return exitUsage
@@ -39,7 +43,7 @@ func runExplain(configPath string, args []string, stdin io.Reader, stdout, stder
 		fmt.Fprintf(stdout, "route_command: %q configured (not executed by explain)\n", cfg.RouteCommand[0])
 	}
 
-	appSnapshot := infraapps.System().Discover()
+	appSnapshot := apps.Discover()
 	router, err := domain.NewRouter(cfg.Rules, cfg.Default, appSnapshot.Catalog)
 	if err != nil {
 		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)

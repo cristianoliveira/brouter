@@ -101,6 +101,11 @@ func NewAdapter(env Environment) *Adapter {
 			return exec.Command(name, args...).Run()
 		}
 	}
+	if env.ConvertPlist == nil && env.GOOS == "darwin" {
+		env.ConvertPlist = func(path string) ([]byte, error) {
+			return exec.Command("/usr/bin/plutil", "-convert", "xml1", "-o", "-", path).Output()
+		}
+	}
 	return &Adapter{env: env, plans: make(map[string]launchSpec)}
 }
 
@@ -323,7 +328,7 @@ func (a *Adapter) readDesktop(path, filename string) (domainapp.Entry, launchSpe
 	}
 	execLine := fields["Exec"]
 	argv, urlIndex, urlFlag, execURL, ok := parseExec(execLine)
-	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) || !trustedExecutable(argv[0]) {
+	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) || !trustedExecutable(argv[0]) || !a.launcherAvailable(argv[0]) {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	metadataURL := firstNonEmpty(fields, "X-WebApp-URL", "X-WebApp-Url", "X-Chromium-WebApp-URL", "X-Chromium-WebApp-Url")
@@ -453,6 +458,15 @@ func (a *Adapter) safePath(path string) bool {
 func (a *Adapter) regular(path string) bool {
 	info, err := a.env.Lstat(path)
 	return err == nil && info.Mode().IsRegular() && info.Size() <= maxFileBytes
+}
+
+func (a *Adapter) launcherAvailable(executable string) bool {
+	if filepath.IsAbs(executable) {
+		info, err := a.env.Stat(executable)
+		return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0
+	}
+	_, err := a.env.LookPath(executable)
+	return err == nil
 }
 
 func parseDesktop(data []byte) (map[string]string, bool) {
