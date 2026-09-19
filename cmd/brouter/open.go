@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/cristianoliveira/brouter/internal/domain"
+	"github.com/cristianoliveira/brouter/internal/domain/installedwebapp"
 	"github.com/cristianoliveira/brouter/internal/infra/config"
+	infraapps "github.com/cristianoliveira/brouter/internal/infra/installedwebapp"
 	"github.com/cristianoliveira/brouter/internal/infra/launch"
 	"github.com/cristianoliveira/brouter/internal/infra/localfile"
 	"github.com/cristianoliveira/brouter/internal/infra/routecmd"
@@ -22,6 +26,18 @@ import (
 // stops the open. Flag parsing lives in the Cobra command layer
 // (cli.go); args holds zero or one positional URL.
 func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runOpenWithDiscovery(configPath, args, stdin, stdout, stderr, infraapps.System())
+}
+
+// appDiscovery is the narrow CLI seam for installed web-app discovery and
+// launch. Tests inject fixture-backed adapters; production uses the system
+// adapter selected by runtime platform.
+type appDiscovery interface {
+	Discover() infraapps.Result
+	Launch(installedwebapp.LaunchPlan, string) error
+}
+
+func runOpenWithDiscovery(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, apps appDiscovery) int {
 	// A multi-document command line bypasses singleInput (which enforces
 	// exactly one URL): the batch is atomic by PREFLIGHT — every
 	// document is validated before the first browser starts. That
@@ -56,18 +72,22 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 		return code
 	}
 
-	router, err := domain.NewRouter(cfg.Rules, cfg.Default)
+	// Opt-in external routing command: command-first, per plan
+	// TASK-0029. Only the exact @default line defers to the static
+	// rules and installed-app catalog; every command failure is visible
+	// and stops the open — never a silent fallback.
+	if code, handled := openByRouteCommand(cfg, path, rawURL, stderr, stdout, logger, resolveStart); handled {
+		return code
+	}
+
+	appSnapshot := apps.Discover()
+	for _, diagnostic := range appSnapshot.Diagnostics {
+		fmt.Fprintf(stderr, "brouter: installed-app discovery: %s\n", diagnostic)
+	}
+	router, err := domain.NewRouter(cfg.Rules, cfg.Default, appSnapshot.Catalog)
 	if err != nil {
 		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
 		return exitFailure
-	}
-
-	// Opt-in external routing command: command-first, per plan
-	// TASK-0029. Only the exact @default line defers to the static
-	// rules; every command failure is visible and stops the open —
-	// never a silent fallback.
-	if code, handled := openByRouteCommand(cfg, path, rawURL, stderr, stdout, logger, resolveStart); handled {
-		return code
 	}
 
 	decision, err := router.Evaluate(rawURL)
@@ -76,15 +96,11 @@ func runOpen(configPath string, args []string, stdin io.Reader, stdout, stderr i
 		return exitFailure
 	}
 
-	target, ok := cfg.Targets[string(decision.Target)]
-	if !ok {
-		// Config validation guarantees defined targets; this is defense
-		// in depth, kept visible like every other failure.
-		fmt.Fprintf(stderr, "target %q is not defined in browsers\n", decision.Target)
-		return exitFailure
+	if decision.InstalledApp != nil {
+		return launchInstalledApp(apps, cfg, decision, rawURL, stderr, stdout, logger, resolveStart)
 	}
 
-	return launchTarget(target, string(decision.Target), rawURL, stderr, stdout, logger, resolveStart)
+	return launchConfiguredDecision(cfg, decision, rawURL, stderr, stdout, logger, resolveStart)
 }
 
 // launchCommandTarget validates a command decision against the config
@@ -113,6 +129,73 @@ func loadConfigForOpen(configPath string, stderr io.Writer) (string, *config.Con
 		return "", nil, exitFailure, false
 	}
 	return path, cfg, exitSuccess, true
+}
+
+func launchConfiguredDecision(cfg *config.Config, decision domain.Decision, rawURL string, stderr, stdout io.Writer, logger *routelog.Logger, resolveStart time.Time) int {
+	target, ok := cfg.Targets[string(decision.Target)]
+	if !ok {
+		// Config validation guarantees defined targets; this is defense
+		// in depth, kept visible like every other failure.
+		fmt.Fprintf(stderr, "target %q is not defined in browsers\n", decision.Target)
+		return exitFailure
+	}
+	return launchTarget(target, string(decision.Target), rawURL, stderr, stdout, logger, resolveStart)
+}
+
+// launchInstalledApp launches a selected app. Only a stale identity causes
+// one refresh/re-evaluation; a real process failure is terminal and never
+// falls back to a different browser.
+func launchInstalledApp(apps appDiscovery, cfg *config.Config, decision domain.Decision, rawURL string, stderr, stdout io.Writer, logger *routelog.Logger, resolveStart time.Time) int {
+	entry := decision.InstalledApp
+	if entry == nil {
+		return exitFailure
+	}
+	if err := apps.Launch(entry.Launch, rawURL); err != nil {
+		if !errors.Is(err, infraapps.ErrStaleLaunchPlan) {
+			fmt.Fprintf(stderr, "open failed: %v\n", err)
+			logger.Emit(routelog.Entry{
+				Target: installedAppLogTarget(entry.ID), Outcome: "launch-failed",
+				ResolveMS: time.Since(resolveStart).Milliseconds(),
+				LaunchMS:  0, RawURL: rawURL, Error: err.Error(),
+			})
+			return exitFailure
+		}
+
+		// The selected metadata changed between scan and launch. Refresh once,
+		// then recompute precedence; stale entries are never launched.
+		snapshot := apps.Discover()
+		refreshed, refreshErr := domain.NewRouter(cfg.Rules, cfg.Default, snapshot.Catalog)
+		if refreshErr != nil {
+			fmt.Fprintf(stderr, "open failed: installed-app catalog refresh failed\n")
+			return exitFailure
+		}
+		refreshedDecision, evaluateErr := refreshed.Evaluate(rawURL)
+		if evaluateErr != nil {
+			fmt.Fprintf(stderr, "%v\n", evaluateErr)
+			return exitFailure
+		}
+		if refreshedDecision.InstalledApp == nil {
+			return launchConfiguredDecision(cfg, refreshedDecision, rawURL, stderr, stdout, logger, resolveStart)
+		}
+		entry = refreshedDecision.InstalledApp
+		if err := apps.Launch(entry.Launch, rawURL); err != nil {
+			fmt.Fprintf(stderr, "open failed: %v\n", err)
+			return exitFailure
+		}
+	}
+
+	logger.Emit(routelog.Entry{
+		Target: installedAppLogTarget(entry.ID), Outcome: "launched",
+		ResolveMS: time.Since(resolveStart).Milliseconds(), LaunchMS: 0,
+		RawURL: rawURL,
+	})
+	fmt.Fprintf(stdout, "launched: installed web app (%s)\n", entry.ID)
+	return exitSuccess
+}
+
+func installedAppLogTarget(id string) string {
+	digest := sha256.Sum256([]byte(id))
+	return fmt.Sprintf("installed-web-app:%x", digest[:6])
 }
 
 // launchTarget resolves and launches one already-validated target,

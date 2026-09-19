@@ -8,10 +8,10 @@ needs them — no empty scaffolding:
 
 - `cmd/brouter` — CLI entry point and composition root (cli). Owns
   process concerns and wiring. Contains no domain routing logic.
-- `internal/domain` — pure routing decisions (domain). Planned for the
-  routing tasks; created when code needs it.
-- `internal/infra` — platform, config, and process adapters (infra).
-  Planned; created when code needs it.
+- `internal/domain` — pure routing decisions (domain), including parsed
+  installed-web-app scope matching and precedence.
+- `internal/infra` — platform, config, and process adapters (infra), including
+  the injected macOS/Linux installed-web-app catalog and launcher adapters.
 - Shared helpers (lib) live in `internal/` packages only when a second
   consumer appears.
 - Test fixtures use colocated `testdata/` directories next to the code
@@ -42,8 +42,9 @@ needs them — no empty scaffolding:
 `cmd/brouter` exposes `validate` and `explain` diagnostics: validate
 reports configuration health with actionable per-field/rule errors;
 explain prints the deterministic routing decision for one URL (arg or
-stdin), including evaluated and skipped rules, profile, fallback, and an
-explicit "no browser was launched" statement. Exit codes: 0 success,
-1 validation failure, 2 usage error. Routing decisions come from
-`internal/domain`; configuration from `internal/infra/config` — neither
-launches browsers or writes logs.
+stdin), including static rules, installed-app matches, fallback, and an
+explicit "no browser was launched" statement. `open` gives explicit route
+commands and static rules precedence, then uses the injected installed-app
+catalog before the configured default. Exit codes: 0 success, 1 validation
+failure, 2 usage error. Routing decisions come from `internal/domain`;
+configuration and OS discovery from `internal/infra`.

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=ChatGPT fixture
+X-WebApp-ID=chatgpt-fixture
+X-WebApp-URL=https://chatgpt.example/
+X-WebApp-Scope=https://chatgpt.example/
+Exec=google-chrome --app=https://chatgpt.example/

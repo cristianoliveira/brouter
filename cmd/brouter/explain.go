@@ -8,6 +8,7 @@ import (
 
 	"github.com/cristianoliveira/brouter/internal/domain"
 	"github.com/cristianoliveira/brouter/internal/infra/config"
+	infraapps "github.com/cristianoliveira/brouter/internal/infra/installedwebapp"
 )
 
 // runExplain implements the body of `brouter explain URL`: it prints
@@ -19,6 +20,10 @@ import (
 // lives in the Cobra command layer (cli.go); args holds zero or one
 // positional URL.
 func runExplain(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runExplainWithDiscovery(configPath, args, stdin, stdout, stderr, infraapps.System())
+}
+
+func runExplainWithDiscovery(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer, apps appDiscovery) int {
 	rawURL, ok := singleInput("explain", args, stdin, stderr)
 	if !ok {
 		return exitUsage
@@ -38,7 +43,8 @@ func runExplain(configPath string, args []string, stdin io.Reader, stdout, stder
 		fmt.Fprintf(stdout, "route_command: %q configured (not executed by explain)\n", cfg.RouteCommand[0])
 	}
 
-	router, err := domain.NewRouter(cfg.Rules, cfg.Default)
+	appSnapshot := apps.Discover()
+	router, err := domain.NewRouter(cfg.Rules, cfg.Default, appSnapshot.Catalog)
 	if err != nil {
 		fmt.Fprintf(stderr, "config invalid:\n%v\n", err)
 		return exitFailure
@@ -93,7 +99,10 @@ func firstLine(s string) string {
 func writeExplain(stdout io.Writer, decision domain.Decision, cfg *config.Config) {
 	fmt.Fprintf(stdout, "url: %s\n", decision.URL)
 
-	if decision.Matched {
+	if decision.InstalledApp != nil {
+		fmt.Fprintf(stdout, "target: installed web app %q\n", decision.InstalledApp.ID)
+		fmt.Fprintln(stdout, "fallback: no (an installed web app matched)")
+	} else if decision.Matched {
 		fmt.Fprintf(stdout, "target: %s (rule %q)\n", decision.Target, decision.MatchedRule)
 		fmt.Fprintln(stdout, "fallback: no (a rule matched)")
 	} else {
