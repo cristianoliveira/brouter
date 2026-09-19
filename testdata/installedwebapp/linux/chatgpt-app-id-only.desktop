@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=ChatGPT app-id-only fixture
+Exec=google-chrome --app-id=chatgpt-fixture

@@ -2,14 +2,15 @@
 // line protocol: an opt-in executable, invoked directly by argv (never
 // through a shell), that reads the URL on stdin and answers with one
 // line — an exact configured target ID, or the reserved literal
-// @default meaning explicit defer to the ordered static rules.
+// @default meaning explicit defer to the normal static-rule,
+// installed-app, and configured-default pipeline.
 //
 // Boundaries, per plans/todo/0029 (6863ca1):
 //   - The runner is TRUSTED local code and is NOT sandboxed: it runs
 //     with the user's host permissions. This is an explicit product
 //     tradeoff, documented in docs/route-command.md.
 //   - Per-URL failures are visible and never silently fall back; only
-//     an exact @default line defers.
+//     an exact @default line defers to the normal routing pipeline.
 //   - Everything is bounded: hard wall-clock timeout, stdout/stderr
 //     caps, strict single-line decoding. Command output is never
 //     echoed into responses; failures carry fixed redacted categories.

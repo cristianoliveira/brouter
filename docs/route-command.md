@@ -37,8 +37,9 @@ work-browser
 
 - The line is one configured target ID with no newline, one terminal
   LF, or one terminal CRLF.
-- The reserved literal `@default` means explicit defer to the ordered
-  static TOML rules. It cannot be configured as a browser ID while
+- The reserved literal `@default` means explicit defer to the normal routing
+  pipeline: ordered static TOML rules, installed web-app discovery, then the
+  configured default. It cannot be configured as a browser ID while
   `route_command` is active.
 - Anything else — empty output, extra lines, embedded CR/LF,
   non-UTF-8 bytes, wrong target — is a visible failure. No `jq` or
@@ -58,7 +59,7 @@ work-browser
   appear in errors. Target IDs must be plain printable strings —
   control bytes are rejected.
 - Every failure is visible and stops the open. Only the exact
-  `@default` line defers to the ordered static rules; failures never
+  `@default` line defers to the normal routing pipeline; failures never
   silently do so.
 
 Malformed URLs, non-http(s) schemes, empty hosts, and URLs containing

@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/cristianoliveira/brouter/internal/domain/installedwebapp"
 )
 
 // Target names a browser destination configured elsewhere.
@@ -132,12 +134,14 @@ type Reason struct {
 // original input for forwarding; Target is the rule target on a match and
 // the router default on fallback.
 type Decision struct {
-	URL         string
-	Target      Target
-	Matched     bool
-	MatchedRule string
-	Reasons     []Reason
-	Skipped     []string
+	URL          string
+	Target       Target
+	Matched      bool
+	MatchedRule  string
+	Source       string
+	InstalledApp *installedwebapp.Entry
+	Reasons      []Reason
+	Skipped      []string
 }
 
 // InvalidURLError reports an input the router will never route.
@@ -158,12 +162,13 @@ func (e *InvalidURLError) Error() string {
 type Router struct {
 	rules         []Rule
 	defaultTarget Target
+	installed     *installedwebapp.Catalog
 }
 
 // NewRouter validates rules (through NewRule, so hand-built rules are
 // normalized and compiled), rejects duplicate rule names, and requires a
 // non-empty default target.
-func NewRouter(rules []Rule, defaultTarget Target) (*Router, error) {
+func NewRouter(rules []Rule, defaultTarget Target, catalogs ...installedwebapp.Catalog) (*Router, error) {
 	if defaultTarget == "" {
 		return nil, fmt.Errorf("router needs a non-empty default target")
 	}
@@ -182,7 +187,15 @@ func NewRouter(rules []Rule, defaultTarget Target) (*Router, error) {
 		normalized = append(normalized, valid)
 	}
 
-	return &Router{rules: normalized, defaultTarget: defaultTarget}, nil
+	var catalog *installedwebapp.Catalog
+	if len(catalogs) > 0 {
+		if len(catalogs) > 1 {
+			return nil, fmt.Errorf("router accepts at most one installed web app catalog")
+		}
+		catalogCopy := catalogs[0]
+		catalog = &catalogCopy
+	}
+	return &Router{rules: normalized, defaultTarget: defaultTarget, installed: catalog}, nil
 }
 
 // Evaluate decides the target for one URL. Host matching is
@@ -229,13 +242,27 @@ func (r *Router) Evaluate(rawURL string) (Decision, error) {
 		decision.Target = rule.Target
 		decision.Matched = true
 		decision.MatchedRule = rule.Name
+		decision.Source = "static-rule"
 		for _, remaining := range r.rules[len(decision.Reasons):] {
 			decision.Skipped = append(decision.Skipped, remaining.Name)
 		}
 		return decision, nil
 	}
 
+	if r.installed != nil && parsed.User == nil {
+		if entry, matched, matchErr := r.installed.Match(rawURL); matchErr != nil {
+			return Decision{}, &InvalidURLError{Input: rawURL, Reason: matchErr.Error()}
+		} else if matched {
+			decision.Target = Target(entry.ID)
+			decision.Matched = true
+			decision.Source = "installed-app"
+			decision.InstalledApp = &entry
+			return decision, nil
+		}
+	}
+
 	decision.Target = r.defaultTarget
+	decision.Source = "configured-default"
 	return decision, nil
 }
 
