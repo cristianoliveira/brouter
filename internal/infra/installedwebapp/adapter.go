@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -33,6 +34,7 @@ type Environment struct {
 	ReadFile     func(string) ([]byte, error)
 	Lstat        func(string) (fs.FileInfo, error)
 	Stat         func(string) (fs.FileInfo, error)
+	EvalSymlinks func(string) (string, error)
 	LookPath     func(string) (string, error)
 	Run          func(string, ...string) error
 	ConvertPlist func(string) ([]byte, error)
@@ -56,13 +58,15 @@ type Adapter struct {
 }
 
 type launchSpec struct {
-	kind              string
-	bundleID          string
-	argv              []string
-	urlIndex          int
-	urlFlag           string
-	sourcePath        string
-	sourceFingerprint string
+	kind                  string
+	bundleID              string
+	argv                  []string
+	urlIndex              int
+	urlFlag               string
+	sourcePath            string
+	sourceFingerprint     string
+	executablePath        string
+	executableFingerprint string
 }
 
 // NewAdapter builds an adapter for the supplied platform environment.
@@ -90,6 +94,9 @@ func withFilesystemDefaults(env Environment) Environment {
 	}
 	if env.Stat == nil {
 		env.Stat = os.Stat
+	}
+	if env.EvalSymlinks == nil {
+		env.EvalSymlinks = filepath.EvalSymlinks
 	}
 	return env
 }

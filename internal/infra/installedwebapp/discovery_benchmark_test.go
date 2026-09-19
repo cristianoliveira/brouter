@@ -13,8 +13,9 @@ func BenchmarkDiscoverLinuxNoApps(b *testing.B) {
 		LinuxAppDirs: []string{root},
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 	})
 	for i := 0; i < b.N; i++ {
@@ -31,8 +32,9 @@ func BenchmarkDiscoverLinuxCold(b *testing.B) {
 			LinuxAppDirs: []string{root},
 			ReadDir:      os.ReadDir,
 			ReadFile:     os.ReadFile,
-			Lstat:        os.Lstat,
-			Stat:         os.Stat,
+			Lstat:        testLstat,
+			Stat:         testStat,
+			EvalSymlinks: testEvalSymlinks,
 			LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		})
 		a.Discover()
@@ -47,8 +49,9 @@ func BenchmarkDiscoverLinuxCached(b *testing.B) {
 		LinuxAppDirs: []string{root},
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 	})
 	a.Discover()

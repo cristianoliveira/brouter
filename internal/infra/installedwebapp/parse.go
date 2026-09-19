@@ -228,10 +228,6 @@ func knownMacBundle(bundleID string) bool {
 	return strings.HasPrefix(bundleID, "com.google.Chrome.app.") || strings.HasPrefix(bundleID, "com.brave.Browser.app.")
 }
 
-func trustedExecutable(executable string) bool {
-	return filepath.IsAbs(executable) || !strings.ContainsAny(executable, `/\\`)
-}
-
 func isHTTPURL(value string) bool {
 	parsed, err := url.Parse(value)
 	return err == nil && parsed.User == nil && parsed.Hostname() != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")

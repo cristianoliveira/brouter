@@ -20,8 +20,9 @@ Exec=google-chrome --app=https://chatgpt.example/
 		LinuxAppDirs: []string{root},
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 	})
 	var wg sync.WaitGroup

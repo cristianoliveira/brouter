@@ -37,9 +37,10 @@ func (a *Adapter) launchSourceExists(spec launchSpec) bool {
 		}
 		plistPath := filepath.Join(spec.sourcePath, "Contents", "Info.plist")
 		values, ok := a.readMacPlist(plistPath)
-		return ok && values["CFBundleIdentifier"] == spec.bundleID && a.fileFingerprint(plistPath) == spec.sourceFingerprint
+		return ok && values["CFBundleIdentifier"] == spec.bundleID && a.macExecutableValid(spec.sourcePath) && a.fileFingerprint(plistPath) == spec.sourceFingerprint
 	}
-	return a.regular(spec.sourcePath) && a.fileFingerprint(spec.sourcePath) == spec.sourceFingerprint
+	return a.regular(spec.sourcePath) && a.fileFingerprint(spec.sourcePath) == spec.sourceFingerprint &&
+		a.secureExecutable(spec.executablePath) && a.fileFingerprint(spec.executablePath) == spec.executableFingerprint
 }
 
 func (a *Adapter) launchMac(spec launchSpec, rawURL string) error {
@@ -83,16 +84,8 @@ func replaceLaunchURL(argv []string, index int, flag, rawURL string) []string {
 }
 
 func (a *Adapter) resolveLinuxExecutable(executable string) (string, error) {
-	if filepath.IsAbs(executable) {
-		info, err := a.env.Stat(executable)
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-			return "", errors.New("installed web app launcher is unavailable")
-		}
-		return executable, nil
-	}
-	resolved, err := a.env.LookPath(executable)
-	if err != nil {
+	if !filepath.IsAbs(executable) || !knownBrowser(executable) || !allowedLinuxExecutable(executable) || !a.secureExecutable(executable) {
 		return "", errors.New("installed web app launcher is unavailable")
 	}
-	return resolved, nil
+	return executable, nil
 }

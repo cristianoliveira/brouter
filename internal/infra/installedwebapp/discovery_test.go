@@ -1,6 +1,7 @@
 package installedwebapp
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,14 +9,17 @@ import (
 )
 
 func TestMacAdapterDiscoversAndSafelyLaunchesGeneratedApp(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "Chrome Apps.localized")
 	bundle := filepath.Join(root, "ChatGPT.app")
 	plist := filepath.Join(bundle, "Contents", "Info.plist")
 	writeFile(t, plist, `<?xml version="1.0"?><plist><dict>
 <key>CFBundleIdentifier</key><string>com.google.Chrome.app.chatgpt</string>
+<key>CFBundleExecutable</key><string>app_mode_loader</string>
+<key>CrBundleIdentifier</key><string>com.google.Chrome</string>
 <key>CrAppModeShortcutURL</key><string>https://chatgpt.com/</string>
 <key>CrAppModeScope</key><string>https://chatgpt.com/</string>
 </dict></plist>`)
+	writeExecutableFile(t, filepath.Join(bundle, "Contents", "MacOS", "app_mode_loader"))
 
 	var gotName string
 	var gotCalls [][]string
@@ -82,8 +86,9 @@ Exec=sh -c 'google-chrome https://evil.test/'
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 	})
 	result := a.Discover()
 	entries := result.Catalog.Entries()
@@ -107,8 +112,9 @@ Exec=google-chrome --app=https://chatgpt.com/
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 	})
 	if got := len(a.Discover().Catalog.Entries()); got != 1 {
 		t.Fatalf("initial entries = %d, want 1", got)
@@ -136,8 +142,9 @@ Exec=google-chrome --app=https://chatgpt.com/
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 		Run: func(name string, got ...string) error {
 			args = append([]string{name}, got...)
 			return nil
@@ -167,8 +174,9 @@ Exec=google-chrome --app=https://example.test/work/
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 	})
 	entry, ok, err := a.Discover().Catalog.Match("https://example.test/work/page")
 	if err != nil || !ok || entry.ID != "app.desktop" {
@@ -185,3 +193,27 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func writeExecutableFile(t *testing.T, path string) {
+	t.Helper()
+	writeFile(t, path, "fixture executable")
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testStat(path string) (fs.FileInfo, error) {
+	if strings.HasPrefix(path, "/usr/bin/") {
+		return os.Stat("/bin/sh")
+	}
+	return os.Stat(path)
+}
+
+func testLstat(path string) (fs.FileInfo, error) {
+	if strings.HasPrefix(path, "/usr/bin/") {
+		return os.Stat("/bin/sh")
+	}
+	return os.Lstat(path)
+}
+
+func testEvalSymlinks(path string) (string, error) { return path, nil }

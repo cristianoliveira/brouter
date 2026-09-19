@@ -80,9 +80,14 @@ func (a *Adapter) buildDesktopEntry(path, filename string, fields map[string]str
 
 func (a *Adapter) desktopLaunch(line string) ([]string, int, string, string, bool) {
 	argv, urlIndex, urlFlag, execURL, ok := parseExec(line)
-	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) || !trustedExecutable(argv[0]) || !a.launcherAvailable(argv[0]) {
+	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) {
 		return nil, -1, "", "", false
 	}
+	resolved, ok := a.resolveTrustedBrowser(argv[0])
+	if !ok {
+		return nil, -1, "", "", false
+	}
+	argv[0] = resolved
 	return argv, urlIndex, urlFlag, execURL, true
 }
 
@@ -92,7 +97,16 @@ func (a *Adapter) newDesktopEntry(path, id, origin, scope string, argv []string,
 	if err != nil {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	return entry, launchSpec{kind: "linux", argv: argv, urlIndex: urlIndex, urlFlag: urlFlag, sourcePath: path, sourceFingerprint: a.fileFingerprint(path)}, true
+	return entry, launchSpec{
+		kind:                  "linux",
+		argv:                  argv,
+		urlIndex:              urlIndex,
+		urlFlag:               urlFlag,
+		sourcePath:            path,
+		sourceFingerprint:     a.fileFingerprint(path),
+		executablePath:        argv[0],
+		executableFingerprint: a.fileFingerprint(argv[0]),
+	}, true
 }
 
 func desktopURLs(fields map[string]string, execURL string) (string, string) {
@@ -102,4 +116,54 @@ func desktopURLs(fields map[string]string, execURL string) (string, string) {
 	}
 	scope := firstNonEmpty(fields, "X-WebApp-Scope", "X-WebApp-scope", "X-Chromium-WebApp-Scope", "X-Chromium-WebApp-scope")
 	return metadataURL, scope
+}
+
+func (a *Adapter) resolveTrustedBrowser(executable string) (string, bool) {
+	candidate := executable
+	if !filepath.IsAbs(candidate) {
+		resolved, err := a.env.LookPath(candidate)
+		if err != nil {
+			return "", false
+		}
+		candidate = resolved
+	}
+	if !filepath.IsAbs(candidate) || !knownBrowser(candidate) {
+		return "", false
+	}
+	canonical, err := a.env.EvalSymlinks(candidate)
+	if err != nil || !filepath.IsAbs(canonical) || !knownBrowser(canonical) {
+		return "", false
+	}
+	if !allowedLinuxExecutable(canonical) || !a.secureExecutable(canonical) {
+		return "", false
+	}
+	return canonical, true
+}
+
+func allowedLinuxExecutable(path string) bool {
+	for _, root := range []string{"/usr", "/opt", "/run/current-system/sw", "/nix/store", "/snap"} {
+		if pathWithin(root, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathWithin(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func (a *Adapter) secureExecutable(path string) bool {
+	info, err := a.env.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 || info.Mode()&0o022 != 0 {
+		return false
+	}
+	for dir := filepath.Dir(path); dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		info, err := a.env.Lstat(dir)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || info.Mode()&0o022 != 0 {
+			return false
+		}
+	}
+	return true
 }

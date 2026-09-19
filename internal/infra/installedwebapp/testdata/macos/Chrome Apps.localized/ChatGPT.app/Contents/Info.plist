@@ -4,6 +4,10 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string>com.google.Chrome.app.chatgpt-fixture</string>
+	<key>CFBundleExecutable</key>
+	<string>app_mode_loader</string>
+	<key>CrBundleIdentifier</key>
+	<string>com.google.Chrome</string>
 	<key>CrAppModeShortcutURL</key>
 	<string>https://chatgpt.example/</string>
 	<key>CrAppModeScope</key>

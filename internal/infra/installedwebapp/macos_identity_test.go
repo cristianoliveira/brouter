@@ -8,23 +8,28 @@ import (
 )
 
 func TestMacLaunchUsesTheVerifiedPathForDuplicateBundleIDs(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "Chrome Apps.localized")
 	for _, name := range []string{"first", "second"} {
-		writeFile(t, filepath.Join(root, name+".app", "Contents", "Info.plist"), `<?xml version="1.0"?><plist><dict>
+		bundle := filepath.Join(root, name+".app")
+		writeFile(t, filepath.Join(bundle, "Contents", "Info.plist"), `<?xml version="1.0"?><plist><dict>
 <key>CFBundleIdentifier</key><string>com.google.Chrome.app.duplicate</string>
+<key>CFBundleExecutable</key><string>app_mode_loader</string>
+<key>CrBundleIdentifier</key><string>com.google.Chrome</string>
 <key>CrAppModeShortcutURL</key><string>https://example.test/</string>
 <key>CrAppModeScope</key><string>https://example.test/</string>
 </dict></plist>`)
+		writeExecutableFile(t, filepath.Join(bundle, "Contents", "MacOS", "app_mode_loader"))
 	}
 	var calls [][]string
 	a := NewAdapter(Environment{
-		GOOS:     "darwin",
-		MacRoots: []string{root},
-		ReadDir:  os.ReadDir,
-		ReadFile: os.ReadFile,
-		Lstat:    os.Lstat,
-		Stat:     os.Stat,
-		LookPath: func(name string) (string, error) { return "/usr/bin/" + name, nil },
+		GOOS:         "darwin",
+		MacRoots:     []string{root},
+		ReadDir:      os.ReadDir,
+		ReadFile:     os.ReadFile,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
+		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		Run: func(name string, args ...string) error {
 			calls = append(calls, append([]string{name}, args...))
 			return nil

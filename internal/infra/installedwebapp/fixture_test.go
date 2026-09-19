@@ -14,7 +14,7 @@ func TestCheckedInCrossPlatformFixtures(t *testing.T) {
 		dir  string
 		want string
 	}{
-		{name: "macOS", goos: "darwin", dir: filepath.Join(root, "macos"), want: "com.google.Chrome.app.chatgpt-fixture"},
+		{name: "macOS", goos: "darwin", dir: filepath.Join(root, "macos", "Chrome Apps.localized"), want: "com.google.Chrome.app.chatgpt-fixture"},
 		{name: "Linux", goos: "linux", dir: filepath.Join(root, "linux"), want: "chatgpt-fixture"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -24,8 +24,9 @@ func TestCheckedInCrossPlatformFixtures(t *testing.T) {
 				LinuxAppDirs: []string{tc.dir},
 				ReadDir:      os.ReadDir,
 				ReadFile:     os.ReadFile,
-				Lstat:        os.Lstat,
-				Stat:         os.Stat,
+				Lstat:        testLstat,
+				Stat:         testStat,
+				EvalSymlinks: testEvalSymlinks,
 				LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 			})
 			entries := a.Discover().Catalog.Entries()

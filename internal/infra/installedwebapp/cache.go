@@ -29,10 +29,9 @@ func (a *Adapter) macRoots() []string {
 	if len(a.env.MacRoots) > 0 {
 		return unique(a.env.MacRoots)
 	}
-	roots := []string{"/Applications", "/Applications/Chrome Apps.localized", "/Applications/Brave Browser Apps.localized"}
+	roots := []string{"/Applications/Chrome Apps.localized", "/Applications/Brave Browser Apps.localized"}
 	if a.env.Home != "" {
 		roots = append(roots,
-			filepath.Join(a.env.Home, "Applications"),
 			filepath.Join(a.env.Home, "Applications", "Chrome Apps.localized"),
 			filepath.Join(a.env.Home, "Applications", "Brave Browser Apps.localized"))
 	}
@@ -114,13 +113,4 @@ func (a *Adapter) fileFingerprint(path string) string {
 		return "missing"
 	}
 	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
-}
-
-func (a *Adapter) launcherAvailable(executable string) bool {
-	if filepath.IsAbs(executable) {
-		info, err := a.env.Stat(executable)
-		return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0
-	}
-	_, err := a.env.LookPath(executable)
-	return err == nil
 }

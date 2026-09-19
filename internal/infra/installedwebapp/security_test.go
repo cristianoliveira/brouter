@@ -24,8 +24,9 @@ Exec=google-chrome --app=https://safe.example/
 		LinuxAppDirs: []string{root},
 		ReadDir:      os.ReadDir,
 		ReadFile:     os.ReadFile,
-		Lstat:        os.Lstat,
-		Stat:         os.Stat,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 		LookPath:     func(name string) (string, error) { return "/usr/bin/" + name, nil },
 	})
 	entries := a.Discover().Catalog.Entries()
@@ -35,18 +36,19 @@ Exec=google-chrome --app=https://safe.example/
 }
 
 func TestMacBundleRequiresKnownChromiumIdentity(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "Chrome Apps.localized")
 	writeFile(t, filepath.Join(root, "arbitrary.app", "Contents", "Info.plist"), `<?xml version="1.0"?><plist><dict>
 <key>CFBundleIdentifier</key><string>com.example.arbitrary</string>
 <key>CrAppModeShortcutURL</key><string>https://example.test/</string>
 </dict></plist>`)
 	a := NewAdapter(Environment{
-		GOOS:     "darwin",
-		MacRoots: []string{root},
-		ReadDir:  os.ReadDir,
-		ReadFile: os.ReadFile,
-		Lstat:    os.Lstat,
-		Stat:     os.Stat,
+		GOOS:         "darwin",
+		MacRoots:     []string{root},
+		ReadDir:      os.ReadDir,
+		ReadFile:     os.ReadFile,
+		Lstat:        testLstat,
+		Stat:         testStat,
+		EvalSymlinks: testEvalSymlinks,
 	})
 	if got := len(a.Discover().Catalog.Entries()); got != 0 {
 		t.Fatalf("entries = %d, want arbitrary bundle skipped", got)

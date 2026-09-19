@@ -87,10 +87,12 @@ Both adapters are required for the initial completion; neither platform may be
 left as a fixture-only placeholder.
 
 - **macOS:** discover generated Chromium-family/Brave and Chrome `.app`
-  metadata in the supported user/system application locations. Inventory real
+  metadata in the supported `Chrome Apps.localized` and
+  `Brave Browser Apps.localized` user/system application roots. Inventory real
   generated metadata first, then parse only the stable origin, authoritative
-  scope, app ID, known browser bundle identity, and launch information that
-  the browser actually emits. A root `CrAppModeShortcutURL` has the narrowly
+  scope, app ID, known parent/browser bundle identity, expected
+  `app_mode_loader` executable, and launch information that the browser
+  actually emits. A root `CrAppModeShortcutURL` has the narrowly
   safe exact-origin compatibility scope; non-root shortcut URLs without
   explicit scope remain unsupported. Launch through a structured platform
   adapter using an opaque bundle/app handle; the domain must not construct
@@ -101,8 +103,12 @@ left as a fixture-only placeholder.
   supported XDG application locations. Parse freedesktop Exec grammar without
   a shell, require an authoritative scope plus an explicit URL/scope field or
   URL in `Exec`, validate argv safely, and reject shell expressions, field-code
-  ambiguity, relative executables, or arbitrary entries. Chromium app-id-only
-  launchers are explicitly unsupported because they do not expose scope.
+  ambiguity, relative executables, PATH hijacks, symlink escapes, arbitrary
+  absolute paths, and arbitrary entries. Canonical browser executables are
+  limited to established `/usr`, `/opt`, `/run/current-system/sw`,
+  `/nix/store`, and `/snap` roots and are stored in the opaque launch plan;
+  launch never re-resolves PATH. Chromium app-id-only launchers are
+  explicitly unsupported because they do not expose scope.
   Support the existing NixOS + Sway/Wayland baseline only; do not imply
   support for other distributions, desktops, portals, Flatpak, or Snap.
   Launch through an opaque adapter handle with structured arguments.
@@ -149,8 +155,9 @@ left as a fixture-only placeholder.
       Brave/Chrome `.app` and `.desktop` fixtures exercise both macOS and Linux
       adapters at initial completion. Fixtures prove missing authoritative
       scope is skipped and do not claim universal Chromium metadata support.
-- [ ] Cache invalidation handles moved and uninstalled apps safely, avoids
-      per-click full scans, and never launches a stale or mixed catalog entry.
+  - [ ] Cache invalidation handles moved and uninstalled apps safely, avoids
+      per-click full scans, and never launches a stale or mixed catalog entry;
+      the cache is explicitly process-local and non-persistent.
 - [ ] Launch uses platform adapters with structured arguments. Missing,
       malformed, or failed launchers produce defined, URL-safe visible errors;
       no wrong-browser fallback occurs after a selected app launch failure.

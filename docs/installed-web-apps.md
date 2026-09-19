@@ -33,10 +33,12 @@ stable hash, never its path, origin, or display name.
 
 ## Platform support and limitations
 
-- **macOS:** generated Chrome and Brave `.app` bundles are scanned in the
+- **macOS:** generated Chrome and Brave `.app` bundles are scanned only in
+  `Chrome Apps.localized` and `Brave Browser Apps.localized` roots under the
   standard system and user application locations. The adapter requires a
-  known Chromium-family bundle identifier and bounded, safe `Info.plist`
-  metadata. A root `CrAppModeShortcutURL` uses the root scope of that exact
+  known Chromium-family bundle identifier, the expected parent browser ID,
+  `CFBundleExecutable=app_mode_loader`, a regular executable, and bounded,
+  safe `Info.plist` metadata. A root `CrAppModeShortcutURL` uses the root scope of that exact
   origin. A non-root shortcut URL is only eligible when explicit scope
   metadata is present. `CrAppModeShortcutURL` is otherwise a launch URL, not a
   manifest scope; brouter does not fetch a manifest or infer a broader scope.
@@ -45,7 +47,10 @@ stable hash, never its path, origin, or display name.
   authoritative scope metadata, or a recognized URL in `Exec` plus explicit
   scope metadata. `Exec` is parsed according to freedesktop grammar without a
   shell, and ambiguous field codes, relative/untrusted executables, and
-  arbitrary desktop entries are rejected.
+  arbitrary desktop entries are rejected. The final canonical browser
+  executable must be regular, non-writable, and under `/usr`, `/opt`,
+  `/run/current-system/sw`, `/nix/store`, or `/snap`; PATH is resolved only
+  during discovery and is never consulted again at launch.
 - Chromium Linux entries containing only `--app-id` do not expose origin or
   scope. They are intentionally unsupported; brouter does not inspect browser
   LevelDB files, guess from app IDs, or fetch network metadata.
@@ -56,3 +61,7 @@ stable hash, never its path, origin, or display name.
 Discovery metadata is treated as user-writable untrusted input. Scans are
 bounded, cache snapshots are invalidated by metadata changes, launch identity
 is checked again before spawning, and all process execution bypasses shells.
+The cache is process-local and is not persisted. A same-user attacker can
+still race a file between the final check and OS launch; exact paths,
+canonical executable checks, fingerprints, and trusted roots bound that risk
+but cannot eliminate filesystem TOCTOU.

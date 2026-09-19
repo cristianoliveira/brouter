@@ -32,7 +32,7 @@ func (a *Adapter) discoverMac() ([]domainapp.Entry, []string) {
 }
 
 func (a *Adapter) readMacApp(appPath string) (domainapp.Entry, launchSpec, bool) {
-	if !a.safePath(appPath) || !strings.HasSuffix(appPath, ".app") {
+	if !a.safePath(appPath) || !strings.HasSuffix(appPath, ".app") || !knownMacAppPath(appPath) {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	values, ok := a.readMacPlist(filepath.Join(appPath, "Contents", "Info.plist"))
@@ -40,7 +40,7 @@ func (a *Adapter) readMacApp(appPath string) (domainapp.Entry, launchSpec, bool)
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	bundleID, origin, scope, ok := macAppMetadata(values)
-	if !ok {
+	if !ok || !a.macExecutableValid(appPath) {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	token := "mac:" + bundleID + ":" + appPath
@@ -72,7 +72,8 @@ func (a *Adapter) readMacPlist(path string) (map[string]string, bool) {
 func macAppMetadata(values map[string]string) (string, string, string, bool) {
 	bundleID := values["CFBundleIdentifier"]
 	shortcut := values["CrAppModeShortcutURL"]
-	if bundleID == "" || shortcut == "" || !knownMacBundle(bundleID) {
+	parentID := values["CrBundleIdentifier"]
+	if bundleID == "" || shortcut == "" || !knownMacBundle(bundleID) || values["CFBundleExecutable"] != "app_mode_loader" || !knownMacParent(parentID) {
 		return "", "", "", false
 	}
 	scope := firstNonEmpty(values, "CrAppModeScope", "Scope")
@@ -87,4 +88,19 @@ func macAppMetadata(values map[string]string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	return bundleID, origin, scope, true
+}
+
+func knownMacAppPath(appPath string) bool {
+	parent := filepath.Base(filepath.Dir(appPath))
+	return parent == "Chrome Apps.localized" || parent == "Brave Browser Apps.localized"
+}
+
+func knownMacParent(bundleID string) bool {
+	return bundleID == "com.google.Chrome" || bundleID == "com.brave.Browser"
+}
+
+func (a *Adapter) macExecutableValid(appPath string) bool {
+	path := filepath.Join(appPath, "Contents", "MacOS", "app_mode_loader")
+	info, err := a.env.Lstat(path)
+	return err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 && info.Mode()&0o022 == 0
 }
