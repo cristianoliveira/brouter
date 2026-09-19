@@ -6,8 +6,7 @@ local working hours (Monday-Friday, 09:00 inclusive to 17:00 exclusive):
 - `meetings.example.com` and `issues.example.com` → `work` during hours.
 - The same work URLs → `personal` outside hours and on weekends.
 - `localhost` and `dev.example.test` → `dev` at all times.
-- Other URLs → `@default`, which lets the normal static-rule, installed-app,
-  and configured-default pipeline decide.
+- Other URLs → `@default`, which lets the ordered static rules decide.
 
 The work check uses `datetime.now()`, so it uses the host's local timezone.
 Tests inject `datetime` values into `choose_target` for deterministic boundary
@@ -43,5 +42,5 @@ failures are visible and never silently fall back. The command is trusted,
 unsandboxed local code, so only run scripts you author or trust.
 
 `brouter validate` checks structure without executing the command, and
-`brouter explain` reports routing without executing it. Use `open` only
+`brouter explain` reports static routing without executing it. Use `open` only
 with a fake browser when exercising the command itself.

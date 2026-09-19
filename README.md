@@ -50,9 +50,7 @@ rule set, and the toolchain policy, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for package boundaries.
 
 For a safe, self-contained Python route command, see
-[examples/python-route-command](examples/python-route-command). See
-[installed web-app routing](docs/installed-web-apps.md) for automatic
-Chromium-family app discovery and platform limitations.
+[examples/python-route-command](examples/python-route-command).
 
 ## Supported platforms (planned)
 
