@@ -51,8 +51,9 @@ func (a *Adapter) launchMac(spec launchSpec, rawURL string) error {
 	}
 	// The URL is a LaunchServices operand, not an --args value. Chromium's
 	// app shim receives this through application:openURLs:, including when
-	// the app is already running.
-	return a.env.Run("open", "-b", spec.bundleID, rawURL)
+	// the app is already running. Use the verified bundle path rather than
+	// bundle-ID lookup so a duplicate registered ID cannot redirect launch.
+	return a.env.Run("open", "-a", spec.sourcePath, rawURL)
 }
 
 func (a *Adapter) launchLinux(spec launchSpec, rawURL string) error {

@@ -47,8 +47,8 @@ func TestMacAdapterDiscoversAndSafelyLaunchesGeneratedApp(t *testing.T) {
 		t.Fatalf("launch = %s %q", gotName, gotCalls)
 	}
 	want := [][]string{
-		{"-b", "com.google.Chrome.app.chatgpt", "https://chatgpt.com/share/123"},
-		{"-b", "com.google.Chrome.app.chatgpt", "https://chatgpt.com/share/456"},
+		{"-a", bundle, "https://chatgpt.com/share/123"},
+		{"-a", bundle, "https://chatgpt.com/share/456"},
 	}
 	if strings.Join(gotCalls[0], "\x00") != strings.Join(want[0], "\x00") || strings.Join(gotCalls[1], "\x00") != strings.Join(want[1], "\x00") {
 		t.Fatalf("launch calls = %q, want %q", gotCalls, want)
