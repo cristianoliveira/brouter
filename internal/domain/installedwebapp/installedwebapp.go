@@ -31,38 +31,59 @@ type Entry struct {
 
 // NewEntry validates and normalizes app metadata before it reaches routing.
 func NewEntry(id, originRaw, scopeRaw string, launch LaunchPlan) (Entry, error) {
+	if err := validateEntryIdentity(id, launch); err != nil {
+		return Entry{}, err
+	}
+	origin, err := normalizedOrigin(id, originRaw)
+	if err != nil {
+		return Entry{}, err
+	}
+	scope, err := normalizedScope(id, origin, scopeRaw)
+	if err != nil {
+		return Entry{}, err
+	}
+	return Entry{ID: id, Origin: origin, Scope: scope, Launch: launch}, nil
+}
+
+func validateEntryIdentity(id string, launch LaunchPlan) error {
 	if strings.TrimSpace(id) == "" {
-		return Entry{}, fmt.Errorf("installed web app id is empty")
+		return fmt.Errorf("installed web app id is empty")
 	}
 	if launch.Token == "" {
-		return Entry{}, fmt.Errorf("installed web app %q has no launch plan", id)
+		return fmt.Errorf("installed web app %q has no launch plan", id)
 	}
-	origin, err := parseMetadataURL(originRaw, "origin")
+	return nil
+}
+
+func normalizedOrigin(id, raw string) (url.URL, error) {
+	origin, err := parseMetadataURL(raw, "origin")
 	if err != nil {
-		return Entry{}, fmt.Errorf("installed web app %q: %w", id, err)
+		return url.URL{}, fmt.Errorf("installed web app %q: %w", id, err)
 	}
 	if origin.Path != "" && origin.Path != "/" {
-		return Entry{}, fmt.Errorf("installed web app %q: origin must not contain a path", id)
+		return url.URL{}, fmt.Errorf("installed web app %q: origin must not contain a path", id)
 	}
-	origin.Path = ""
-	origin.RawPath = ""
-	origin.RawQuery = ""
-	origin.Fragment = ""
+	origin.Path, origin.RawPath, origin.RawQuery, origin.Fragment = "", "", "", ""
+	return origin, nil
+}
 
-	scope, err := parseMetadataURL(scopeRaw, "scope")
+func normalizedScope(id string, origin url.URL, raw string) (url.URL, error) {
+	scope, err := parseMetadataURL(raw, "scope")
 	if err != nil {
-		return Entry{}, fmt.Errorf("installed web app %q: %w", id, err)
+		return url.URL{}, fmt.Errorf("installed web app %q: %w", id, err)
 	}
-	if sameOrigin(origin, scope) == false {
-		return Entry{}, fmt.Errorf("installed web app %q: scope has a different origin", id)
+	if !sameOrigin(origin, scope) {
+		return url.URL{}, fmt.Errorf("installed web app %q: scope has a different origin", id)
+	}
+	if scope.RawQuery != "" || scope.Fragment != "" {
+		return url.URL{}, fmt.Errorf("installed web app %q: scope must not contain query or fragment", id)
 	}
 	scope.Path, scope.RawPath, err = normalizeScopePath(scope)
 	if err != nil {
-		return Entry{}, fmt.Errorf("installed web app %q: %w", id, err)
+		return url.URL{}, fmt.Errorf("installed web app %q: %w", id, err)
 	}
-	scope.RawQuery = ""
-	scope.Fragment = ""
-	return Entry{ID: id, Origin: origin, Scope: scope, Launch: launch}, nil
+	scope.RawQuery, scope.Fragment = "", ""
+	return scope, nil
 }
 
 // Catalog is an immutable, deterministically ordered installed-app snapshot.

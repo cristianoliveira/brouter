@@ -7,7 +7,7 @@ import (
 )
 
 func TestCheckedInCrossPlatformFixtures(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "testdata", "installedwebapp")
+	root := "testdata"
 	for _, tc := range []struct {
 		name string
 		goos string

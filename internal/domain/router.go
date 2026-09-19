@@ -204,37 +204,48 @@ func NewRouter(rules []Rule, defaultTarget Target, catalogs ...installedwebapp.C
 // no IDN/punycode conversion. URL-regex rules evaluate the original
 // input exactly as received.
 func (r *Router) Evaluate(rawURL string) (Decision, error) {
+	parsed, host, err := routeURL(rawURL)
+	if err != nil {
+		return Decision{}, err
+	}
+	decision := Decision{URL: rawURL}
+	if r.evaluateRules(&decision, host, rawURL) {
+		return decision, nil
+	}
+	if r.evaluateInstalled(&decision, parsed, rawURL) {
+		return decision, nil
+	}
+	decision.Target = r.defaultTarget
+	decision.Source = "configured-default"
+	return decision, nil
+}
+
+func routeURL(rawURL string) (url.URL, string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return Decision{}, &InvalidURLError{Input: rawURL, Reason: fmt.Sprintf("malformed url: %s", sanitizeParseError(err, rawURL))}
+		return url.URL{}, "", &InvalidURLError{Input: rawURL, Reason: fmt.Sprintf("malformed url: %s", sanitizeParseError(err, rawURL))}
 	}
-
 	scheme := strings.ToLower(parsed.Scheme)
 	switch scheme {
 	case "http", "https":
 	case "":
-		return Decision{}, &InvalidURLError{Input: rawURL, Reason: "malformed url: missing scheme"}
+		return url.URL{}, "", &InvalidURLError{Input: rawURL, Reason: "malformed url: missing scheme"}
 	default:
-		return Decision{}, &InvalidURLError{
-			Input:  rawURL,
-			Reason: fmt.Sprintf("unsupported scheme %q (only http and https are routed)", scheme),
-		}
+		return url.URL{}, "", &InvalidURLError{Input: rawURL, Reason: fmt.Sprintf("unsupported scheme %q (only http and https are routed)", scheme)}
 	}
-
 	host := normalizeHost(parsed.Hostname())
 	if host == "" {
-		return Decision{}, &InvalidURLError{Input: rawURL, Reason: "empty host"}
+		return url.URL{}, "", &InvalidURLError{Input: rawURL, Reason: "empty host"}
 	}
+	return *parsed, host, nil
+}
 
-	decision := Decision{URL: rawURL}
+func (r *Router) evaluateRules(decision *Decision, host, rawURL string) bool {
 	for _, rule := range r.rules {
 		matched, detail := ruleMatches(rule, host, rawURL)
 		decision.Reasons = append(decision.Reasons, Reason{
-			Rule:    rule.Name,
-			Kind:    rule.Kind,
-			Pattern: rule.Pattern,
-			Matched: matched,
-			Detail:  detail,
+			Rule: rule.Name, Kind: rule.Kind, Pattern: rule.Pattern,
+			Matched: matched, Detail: detail,
 		})
 		if !matched {
 			continue
@@ -246,24 +257,24 @@ func (r *Router) Evaluate(rawURL string) (Decision, error) {
 		for _, remaining := range r.rules[len(decision.Reasons):] {
 			decision.Skipped = append(decision.Skipped, remaining.Name)
 		}
-		return decision, nil
+		return true
 	}
+	return false
+}
 
-	if r.installed != nil && parsed.User == nil {
-		if entry, matched, matchErr := r.installed.Match(rawURL); matchErr != nil {
-			return Decision{}, &InvalidURLError{Input: rawURL, Reason: matchErr.Error()}
-		} else if matched {
-			decision.Target = Target(entry.ID)
-			decision.Matched = true
-			decision.Source = "installed-app"
-			decision.InstalledApp = &entry
-			return decision, nil
-		}
+func (r *Router) evaluateInstalled(decision *Decision, parsed url.URL, rawURL string) bool {
+	if r.installed == nil || parsed.User != nil {
+		return false
 	}
-
-	decision.Target = r.defaultTarget
-	decision.Source = "configured-default"
-	return decision, nil
+	entry, matched, err := r.installed.Match(rawURL)
+	if err != nil || !matched {
+		return false
+	}
+	decision.Target = Target(entry.ID)
+	decision.Matched = true
+	decision.Source = "installed-app"
+	decision.InstalledApp = &entry
+	return true
 }
 
 // sanitizeParseError strips the quoted input that net/url embeds in its

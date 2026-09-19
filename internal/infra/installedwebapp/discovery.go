@@ -65,16 +65,23 @@ type Adapter struct {
 }
 
 type launchSpec struct {
-	kind       string
-	bundleID   string
-	argv       []string
-	urlIndex   int
-	urlFlag    string
-	sourcePath string
+	kind              string
+	bundleID          string
+	argv              []string
+	urlIndex          int
+	urlFlag           string
+	sourcePath        string
+	sourceFingerprint string
 }
 
 // NewAdapter builds an adapter for the supplied platform environment.
 func NewAdapter(env Environment) *Adapter {
+	env = withFilesystemDefaults(env)
+	env = withProcessDefaults(env)
+	return &Adapter{env: env, plans: make(map[string]launchSpec)}
+}
+
+func withFilesystemDefaults(env Environment) Environment {
 	if env.GOOS == "" {
 		env.GOOS = runtime.GOOS
 	}
@@ -93,6 +100,10 @@ func NewAdapter(env Environment) *Adapter {
 	if env.Stat == nil {
 		env.Stat = os.Stat
 	}
+	return env
+}
+
+func withProcessDefaults(env Environment) Environment {
 	if env.LookPath == nil {
 		env.LookPath = exec.LookPath
 	}
@@ -106,7 +117,7 @@ func NewAdapter(env Environment) *Adapter {
 			return exec.Command("/usr/bin/plutil", "-convert", "xml1", "-o", "-", path).Output()
 		}
 	}
-	return &Adapter{env: env, plans: make(map[string]launchSpec)}
+	return env
 }
 
 // System returns the production adapter. It intentionally supports only the
@@ -151,57 +162,83 @@ func (a *Adapter) Launch(plan domainapp.LaunchPlan, rawURL string) error {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	spec, ok := a.plans[plan.Token]
-	if !ok {
+	if !ok || !a.launchSourceExists(spec) {
 		return ErrStaleLaunchPlan
-	}
-	if spec.sourcePath != "" {
-		if spec.kind == "mac" {
-			if !a.safePath(spec.sourcePath) {
-				return ErrStaleLaunchPlan
-			}
-		} else if !a.regular(spec.sourcePath) {
-			return ErrStaleLaunchPlan
-		}
 	}
 	switch spec.kind {
 	case "mac":
-		if spec.bundleID == "" {
-			return errors.New("installed web app bundle identity is missing")
-		}
-		if _, err := a.env.LookPath("open"); err != nil {
-			return errors.New("macOS open launcher is unavailable")
-		}
-		return a.env.Run("open", "-b", spec.bundleID, "--args", rawURL)
+		return a.launchMac(spec, rawURL)
 	case "linux":
-		argv := append([]string(nil), spec.argv...)
-		if spec.urlIndex >= 0 {
-			if spec.urlFlag != "" {
-				argv[spec.urlIndex] = spec.urlFlag + rawURL
-			} else {
-				argv[spec.urlIndex] = rawURL
-			}
-		} else {
-			argv = append(argv, rawURL)
-		}
-		if len(argv) == 0 {
-			return errors.New("installed web app launcher is empty")
-		}
-		if filepath.IsAbs(argv[0]) {
-			info, err := a.env.Stat(argv[0])
-			if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
-				return errors.New("installed web app launcher is unavailable")
-			}
-		} else {
-			resolved, err := a.env.LookPath(argv[0])
-			if err != nil {
-				return errors.New("installed web app launcher is unavailable")
-			}
-			argv[0] = resolved
-		}
-		return a.env.Run(argv[0], argv[1:]...)
+		return a.launchLinux(spec, rawURL)
 	default:
 		return errors.New("installed web app launch plan is unsupported")
 	}
+}
+
+func (a *Adapter) launchSourceExists(spec launchSpec) bool {
+	if spec.sourcePath == "" {
+		return true
+	}
+	if spec.kind == "mac" {
+		if !a.safePath(spec.sourcePath) {
+			return false
+		}
+		plistPath := filepath.Join(spec.sourcePath, "Contents", "Info.plist")
+		values, ok := a.readMacPlist(plistPath)
+		return ok && values["CFBundleIdentifier"] == spec.bundleID && a.fileFingerprint(plistPath) == spec.sourceFingerprint
+	}
+	return a.regular(spec.sourcePath) && a.fileFingerprint(spec.sourcePath) == spec.sourceFingerprint
+}
+
+func (a *Adapter) launchMac(spec launchSpec, rawURL string) error {
+	if spec.bundleID == "" {
+		return errors.New("installed web app bundle identity is missing")
+	}
+	if _, err := a.env.LookPath("open"); err != nil {
+		return errors.New("macOS open launcher is unavailable")
+	}
+	return a.env.Run("open", "-b", spec.bundleID, "--args", rawURL)
+}
+
+func (a *Adapter) launchLinux(spec launchSpec, rawURL string) error {
+	argv := append([]string(nil), spec.argv...)
+	if len(argv) == 0 {
+		return errors.New("installed web app launcher is empty")
+	}
+	argv = replaceLaunchURL(argv, spec.urlIndex, spec.urlFlag, rawURL)
+	resolved, err := a.resolveLinuxExecutable(argv[0])
+	if err != nil {
+		return err
+	}
+	argv[0] = resolved
+	return a.env.Run(argv[0], argv[1:]...)
+}
+
+func replaceLaunchURL(argv []string, index int, flag, rawURL string) []string {
+	if index < 0 {
+		return append(argv, rawURL)
+	}
+	if flag != "" {
+		argv[index] = flag + rawURL
+	} else {
+		argv[index] = rawURL
+	}
+	return argv
+}
+
+func (a *Adapter) resolveLinuxExecutable(executable string) (string, error) {
+	if filepath.IsAbs(executable) {
+		info, err := a.env.Stat(executable)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+			return "", errors.New("installed web app launcher is unavailable")
+		}
+		return executable, nil
+	}
+	resolved, err := a.env.LookPath(executable)
+	if err != nil {
+		return "", errors.New("installed web app launcher is unavailable")
+	}
+	return resolved, nil
 }
 
 func (a *Adapter) discoverMac() ([]domainapp.Entry, []string) {
@@ -231,46 +268,12 @@ func (a *Adapter) readMacApp(appPath string) (domainapp.Entry, launchSpec, bool)
 	if !a.safePath(appPath) || !strings.HasSuffix(appPath, ".app") {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
-	if !a.regular(plistPath) {
-		return domainapp.Entry{}, launchSpec{}, false
-	}
-	data, err := a.env.ReadFile(plistPath)
-	if err != nil || len(data) > maxFileBytes {
-		return domainapp.Entry{}, launchSpec{}, false
-	}
-	if bytes.HasPrefix(data, []byte("bplist00")) && a.env.ConvertPlist != nil {
-		data, err = a.env.ConvertPlist(plistPath)
-		if err != nil || len(data) > maxFileBytes {
-			return domainapp.Entry{}, launchSpec{}, false
-		}
-	}
-	values, ok := parsePlistStrings(data)
+	values, ok := a.readMacPlist(filepath.Join(appPath, "Contents", "Info.plist"))
 	if !ok {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	bundleID := values["CFBundleIdentifier"]
-	shortcut := values["CrAppModeShortcutURL"]
-	if bundleID == "" || shortcut == "" || !knownMacBundle(bundleID) {
-		return domainapp.Entry{}, launchSpec{}, false
-	}
-	scope := values["CrAppModeScope"]
-	if scope == "" {
-		scope = values["Scope"]
-	}
-	// CrAppModeShortcutURL is normally a launch URL, not an authoritative
-	// manifest scope. Product-approved compatibility is limited to a root
-	// shortcut: root is the only manifest scope that can contain root, so it
-	// cannot broaden matching. Non-root shortcuts without explicit scope are
-	// skipped rather than guessed or fetched from the network.
-	origin, err := originOf(shortcut)
-	if err != nil {
-		return domainapp.Entry{}, launchSpec{}, false
-	}
-	if scope == "" && shortcutHasRootPath(shortcut) {
-		scope = origin + "/"
-	}
-	if scope == "" {
+	bundleID, origin, scope, ok := macAppMetadata(values)
+	if !ok {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	token := "mac:" + bundleID + ":" + appPath
@@ -278,7 +281,45 @@ func (a *Adapter) readMacApp(appPath string) (domainapp.Entry, launchSpec, bool)
 	if err != nil {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	return entry, launchSpec{kind: "mac", bundleID: bundleID, sourcePath: appPath}, true
+	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
+	return entry, launchSpec{kind: "mac", bundleID: bundleID, sourcePath: appPath, sourceFingerprint: a.fileFingerprint(plistPath)}, true
+}
+
+func (a *Adapter) readMacPlist(path string) (map[string]string, bool) {
+	if !a.regular(path) {
+		return nil, false
+	}
+	data, err := a.env.ReadFile(path)
+	if err != nil || len(data) > maxFileBytes {
+		return nil, false
+	}
+	if bytes.HasPrefix(data, []byte("bplist00")) && a.env.ConvertPlist != nil {
+		data, err = a.env.ConvertPlist(path)
+		if err != nil || len(data) > maxFileBytes {
+			return nil, false
+		}
+	}
+	return parsePlistStrings(data)
+}
+
+func macAppMetadata(values map[string]string) (string, string, string, bool) {
+	bundleID := values["CFBundleIdentifier"]
+	shortcut := values["CrAppModeShortcutURL"]
+	if bundleID == "" || shortcut == "" || !knownMacBundle(bundleID) {
+		return "", "", "", false
+	}
+	scope := firstNonEmpty(values, "CrAppModeScope", "Scope")
+	origin, err := originOf(shortcut)
+	if err != nil {
+		return "", "", "", false
+	}
+	if scope == "" && shortcutHasRootPath(shortcut) {
+		scope = origin + "/"
+	}
+	if scope == "" {
+		return "", "", "", false
+	}
+	return bundleID, origin, scope, true
 }
 
 func (a *Adapter) discoverLinux() ([]domainapp.Entry, []string) {
@@ -326,22 +367,16 @@ func (a *Adapter) readDesktop(path, filename string) (domainapp.Entry, launchSpe
 	if !ok || fields["Type"] != "Application" {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	execLine := fields["Exec"]
-	argv, urlIndex, urlFlag, execURL, ok := parseExec(execLine)
-	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) || !trustedExecutable(argv[0]) || !a.launcherAvailable(argv[0]) {
+	return a.buildDesktopEntry(path, filename, fields)
+}
+
+func (a *Adapter) buildDesktopEntry(path, filename string, fields map[string]string) (domainapp.Entry, launchSpec, bool) {
+	argv, urlIndex, urlFlag, execURL, ok := a.desktopLaunch(fields["Exec"])
+	if !ok {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	metadataURL := firstNonEmpty(fields, "X-WebApp-URL", "X-WebApp-Url", "X-Chromium-WebApp-URL", "X-Chromium-WebApp-Url")
-	scope := firstNonEmpty(fields, "X-WebApp-Scope", "X-WebApp-scope", "X-Chromium-WebApp-Scope", "X-Chromium-WebApp-scope")
-	if metadataURL == "" {
-		metadataURL = execURL
-	}
-	if metadataURL == "" {
-		// App-id-only Chromium launchers do not expose a trustworthy scope.
-		return domainapp.Entry{}, launchSpec{}, false
-	}
-	if scope == "" {
-		// A start/launch URL is not an authoritative scope.
+	metadataURL, scope := desktopURLs(fields, execURL)
+	if metadataURL == "" || scope == "" {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
 	origin, err := originOf(metadataURL)
@@ -352,12 +387,33 @@ func (a *Adapter) readDesktop(path, filename string) (domainapp.Entry, launchSpe
 	if id == "" {
 		id = filename
 	}
+	return a.newDesktopEntry(path, id, origin, scope, argv, urlIndex, urlFlag)
+}
+
+func (a *Adapter) desktopLaunch(line string) ([]string, int, string, string, bool) {
+	argv, urlIndex, urlFlag, execURL, ok := parseExec(line)
+	if !ok || len(argv) == 0 || !knownBrowser(argv[0]) || !trustedExecutable(argv[0]) || !a.launcherAvailable(argv[0]) {
+		return nil, -1, "", "", false
+	}
+	return argv, urlIndex, urlFlag, execURL, true
+}
+
+func (a *Adapter) newDesktopEntry(path, id, origin, scope string, argv []string, urlIndex int, urlFlag string) (domainapp.Entry, launchSpec, bool) {
 	token := "linux:" + path
 	entry, err := domainapp.NewEntry(id, origin, scope, domainapp.NewLaunchPlan(token))
 	if err != nil {
 		return domainapp.Entry{}, launchSpec{}, false
 	}
-	return entry, launchSpec{kind: "linux", argv: argv, urlIndex: urlIndex, urlFlag: urlFlag, sourcePath: path}, true
+	return entry, launchSpec{kind: "linux", argv: argv, urlIndex: urlIndex, urlFlag: urlFlag, sourcePath: path, sourceFingerprint: a.fileFingerprint(path)}, true
+}
+
+func desktopURLs(fields map[string]string, execURL string) (string, string) {
+	metadataURL := firstNonEmpty(fields, "X-WebApp-URL", "X-WebApp-Url", "X-Chromium-WebApp-URL", "X-Chromium-WebApp-Url")
+	if metadataURL == "" {
+		metadataURL = execURL
+	}
+	scope := firstNonEmpty(fields, "X-WebApp-Scope", "X-WebApp-scope", "X-Chromium-WebApp-Scope", "X-Chromium-WebApp-scope")
+	return metadataURL, scope
 }
 
 func (a *Adapter) appPaths(root string) []string {
@@ -460,6 +516,14 @@ func (a *Adapter) regular(path string) bool {
 	return err == nil && info.Mode().IsRegular() && info.Size() <= maxFileBytes
 }
 
+func (a *Adapter) fileFingerprint(path string) string {
+	info, err := a.env.Stat(path)
+	if err != nil {
+		return "missing"
+	}
+	return fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+}
+
 func (a *Adapter) launcherAvailable(executable string) bool {
 	if filepath.IsAbs(executable) {
 		info, err := a.env.Stat(executable)
@@ -494,58 +558,78 @@ func parseDesktop(data []byte) (map[string]string, bool) {
 	return fields, group == "Desktop Entry"
 }
 
+type execParser struct {
+	argv    []string
+	token   strings.Builder
+	quoted  bool
+	escaped bool
+}
+
 func parseExec(line string) ([]string, int, string, string, bool) {
-	var argv []string
-	var token strings.Builder
-	quoted := false
-	escaped := false
-	flush := func() {
-		if token.Len() > 0 {
-			argv = append(argv, token.String())
-			token.Reset()
-		}
-	}
+	parser := execParser{}
 	for _, r := range line {
-		switch {
-		case escaped:
-			if r == '%' || unicode.IsControl(r) {
-				return nil, -1, "", "", false
-			}
-			token.WriteRune(r)
-			escaped = false
-		case r == '\\':
-			escaped = true
-		case r == '"':
-			quoted = !quoted
-		case unicode.IsSpace(r) && !quoted:
-			flush()
-		case r == '%' || unicode.IsControl(r):
+		if !parser.consume(r) {
 			return nil, -1, "", "", false
-		case r == '\'' && !quoted:
-			return nil, -1, "", "", false
-		default:
-			token.WriteRune(r)
 		}
 	}
-	if escaped || quoted {
+	if parser.escaped || parser.quoted {
 		return nil, -1, "", "", false
 	}
-	flush()
-	if len(argv) == 0 {
+	parser.flush()
+	if len(parser.argv) == 0 {
 		return nil, -1, "", "", false
 	}
-	urlIndex := -1
-	urlFlag := ""
-	execURL := ""
+	return execURL(parser.argv)
+}
+
+func (p *execParser) consume(r rune) bool {
+	if p.escaped {
+		return p.consumeEscaped(r)
+	}
+	if r == '\\' {
+		p.escaped = true
+		return true
+	}
+	if r == '"' {
+		p.quoted = !p.quoted
+		return true
+	}
+	if unicode.IsSpace(r) && !p.quoted {
+		p.flush()
+		return true
+	}
+	if execRejectedRune(r, p.quoted) {
+		return false
+	}
+	p.token.WriteRune(r)
+	return true
+}
+
+func execRejectedRune(r rune, quoted bool) bool {
+	return r == '%' || unicode.IsControl(r) || (r == '\'' && !quoted)
+}
+
+func (p *execParser) consumeEscaped(r rune) bool {
+	if r == '%' || unicode.IsControl(r) {
+		return false
+	}
+	p.token.WriteRune(r)
+	p.escaped = false
+	return true
+}
+
+func (p *execParser) flush() {
+	if p.token.Len() > 0 {
+		p.argv = append(p.argv, p.token.String())
+		p.token.Reset()
+	}
+}
+
+func execURL(argv []string) ([]string, int, string, string, bool) {
+	urlIndex, urlFlag, execURL := -1, "", ""
 	for i, arg := range argv[1:] {
 		index := i + 1
-		var candidate, flag string
-		switch {
-		case strings.HasPrefix(arg, "--app="):
-			candidate, flag = strings.TrimPrefix(arg, "--app="), "--app="
-		case isHTTPURL(arg):
-			candidate = arg
-		}
+		candidate, flag := execURLCandidate(arg)
 		if candidate == "" {
 			continue
 		}
@@ -557,51 +641,76 @@ func parseExec(line string) ([]string, int, string, string, bool) {
 	return argv, urlIndex, urlFlag, execURL, true
 }
 
+func execURLCandidate(arg string) (string, string) {
+	if strings.HasPrefix(arg, "--app=") {
+		return strings.TrimPrefix(arg, "--app="), "--app="
+	}
+	if isHTTPURL(arg) {
+		return arg, ""
+	}
+	return "", ""
+}
+
+type plistState struct {
+	values map[string]string
+	key    string
+	depth  int
+	inDict bool
+}
+
 func parsePlistStrings(data []byte) (map[string]string, bool) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
-	values := make(map[string]string)
-	var key string
-	inDict := false
-	depth := 0
+	state := plistState{values: make(map[string]string)}
 	for {
 		token, err := decoder.Token()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return values, inDict
-			}
+		if errors.Is(err, io.EOF) {
+			return state.values, state.inDict
+		}
+		if err != nil || !consumePlistToken(decoder, token, &state) {
 			return nil, false
 		}
-		switch element := token.(type) {
-		case xml.StartElement:
-			switch element.Name.Local {
-			case "dict":
-				depth++
-				if depth > 16 {
-					return nil, false
-				}
-				inDict = true
-			case "key":
-				var value string
-				if err := decoder.DecodeElement(&value, &element); err != nil {
-					return nil, false
-				}
-				key = value
-			case "string":
-				var value string
-				if err := decoder.DecodeElement(&value, &element); err != nil {
-					return nil, false
-				}
-				if key != "" {
-					values[key] = value
-					key = ""
-				}
-			}
-		case xml.EndElement:
-			if element.Name.Local == "dict" {
-				depth--
-			}
+	}
+}
+
+func consumePlistToken(decoder *xml.Decoder, token xml.Token, state *plistState) bool {
+	element, isStart := token.(xml.StartElement)
+	if isStart {
+		return consumePlistStart(decoder, element, state)
+	}
+	end, isEnd := token.(xml.EndElement)
+	return !isEnd || consumePlistEnd(end, state)
+}
+
+func consumePlistStart(decoder *xml.Decoder, element xml.StartElement, state *plistState) bool {
+	switch element.Name.Local {
+	case "dict":
+		state.depth++
+		state.inDict = true
+		return state.depth <= 16
+	case "key":
+		var value string
+		if err := decoder.DecodeElement(&value, &element); err != nil {
+			return false
+		}
+		state.key = value
+	case "string":
+		var value string
+		if err := decoder.DecodeElement(&value, &element); err != nil {
+			return false
+		}
+		if state.key != "" {
+			state.values[state.key] = value
+			state.key = ""
 		}
 	}
+	return true
+}
+
+func consumePlistEnd(element xml.EndElement, state *plistState) bool {
+	if element.Name.Local == "dict" {
+		state.depth--
+	}
+	return state.depth >= 0
 }
 
 func validateLaunchURL(raw string) error {

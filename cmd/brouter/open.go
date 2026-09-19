@@ -197,7 +197,7 @@ func installedAppLogTarget(id string) string {
 	var b strings.Builder
 	b.WriteString("installed-web-app:")
 	for _, r := range id {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+		if safeInstalledAppIDRune(r) {
 			b.WriteRune(r)
 		}
 		if b.Len() >= 96 {
@@ -205,6 +205,11 @@ func installedAppLogTarget(id string) string {
 		}
 	}
 	return b.String()
+}
+
+func safeInstalledAppIDRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_'
 }
 
 // launchTarget resolves and launches one already-validated target,

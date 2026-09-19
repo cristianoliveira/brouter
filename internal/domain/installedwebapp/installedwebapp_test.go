@@ -1,9 +1,6 @@
 package installedwebapp
 
-import (
-	"net/url"
-	"testing"
-)
+import "testing"
 
 func TestCatalogMatchesSameOriginAndScope(t *testing.T) {
 	catalog, err := NewCatalog([]Entry{
@@ -13,7 +10,6 @@ func TestCatalogMatchesSameOriginAndScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	for _, tc := range []struct {
 		name string
 		url  string
@@ -22,34 +18,41 @@ func TestCatalogMatchesSameOriginAndScope(t *testing.T) {
 		{name: "origin", url: "https://chatgpt.com/share/abc", want: "chatgpt"},
 		{name: "longest scope", url: "https://chatgpt.com/settings/profile", want: "chatgpt-settings"},
 		{name: "scope exact path", url: "https://chatgpt.com/settings", want: "chatgpt-settings"},
-		{name: "encoded separator stays outside scope", url: "https://chatgpt.com/settings%2Fprofile", want: "chatgpt"},
+		{name: "encoded separator", url: "https://chatgpt.com/settings%2Fprofile", want: "chatgpt"},
 		{name: "scope boundary", url: "https://chatgpt.com/settings-other", want: "chatgpt"},
 		{name: "lookalike host", url: "https://chatgpt.com.evil.test/", want: ""},
 		{name: "scheme", url: "http://chatgpt.com/", want: ""},
+		{name: "default port", url: "https://chatgpt.com:443/share/abc", want: "chatgpt"},
 		{name: "port", url: "https://chatgpt.com:444/", want: ""},
-		{name: "credentials", url: "https://user:secret@chatgpt.com/", want: ""},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok, err := catalog.Match(tc.url)
-			if tc.name == "credentials" {
-				if err == nil {
-					t.Fatal("Match() error = nil, want credentials rejection")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !ok {
-				if tc.want != "" {
-					t.Fatalf("Match() found no app, want %q", tc.want)
-				}
-				return
-			}
-			if got.ID != tc.want {
-				t.Fatalf("Match() = %q, want %q", got.ID, tc.want)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { assertCatalogMatch(t, catalog, tc.url, tc.want) })
+	}
+}
+
+func assertCatalogMatch(t *testing.T, catalog Catalog, rawURL, want string) {
+	t.Helper()
+	got, ok, err := catalog.Match(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want == "" {
+		if ok {
+			t.Fatalf("Match() = %q, want no match", got.ID)
+		}
+		return
+	}
+	if !ok || got.ID != want {
+		t.Fatalf("Match() = (%q, %v), want %q", got.ID, ok, want)
+	}
+}
+
+func TestCatalogRejectsCredentials(t *testing.T) {
+	catalog, err := NewCatalog([]Entry{entry(t, "chatgpt", "https://chatgpt.com/", "https://chatgpt.com/")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := catalog.Match("https://user:secret@chatgpt.com/"); err == nil {
+		t.Fatal("Match() error = nil, want credentials rejection")
 	}
 }
 
@@ -109,7 +112,7 @@ func TestScopeURLIsParsedAndNormalized(t *testing.T) {
 	if entry.Scope.Path != "/work/" {
 		t.Fatalf("Scope.Path = %q, want /work/", entry.Scope.Path)
 	}
-	if _, err := url.Parse(entry.Scope.String()); err != nil {
-		t.Fatal(err)
+	if entry.Scope.String() == "" {
+		t.Fatal("Scope.String() is empty")
 	}
 }

@@ -6,7 +6,42 @@ import (
 	installedwebapp "github.com/cristianoliveira/brouter/internal/domain/installedwebapp"
 )
 
-func TestRouterInstalledAppRunsAfterStaticRules(t *testing.T) {
+func TestRouterStaticRuleRunsBeforeInstalledApp(t *testing.T) {
+	router := mustInstalledRouter(t, []Rule{
+		mustRule(t, "forced", ExactHost, "forced.example", "forced-browser"),
+	})
+	decision, err := router.Evaluate("https://forced.example/")
+	if err != nil || decision.Source != "static-rule" || decision.InstalledApp != nil {
+		t.Fatalf("decision = %#v, err=%v", decision, err)
+	}
+}
+
+func TestRouterInstalledAppRunsBeforeConfiguredDefault(t *testing.T) {
+	router := mustInstalledRouter(t, nil)
+	decision, err := router.Evaluate("https://chatgpt.com/share/1")
+	if err != nil || decision.InstalledApp == nil || decision.InstalledApp.ID != "chatgpt" {
+		t.Fatalf("decision = %#v, err=%v", decision, err)
+	}
+}
+
+func TestRouterConfiguredDefaultRemainsLast(t *testing.T) {
+	router := mustInstalledRouter(t, nil)
+	decision, err := router.Evaluate("https://other.test/")
+	if err != nil || decision.InstalledApp != nil || decision.Source != "configured-default" {
+		t.Fatalf("decision = %#v, err=%v", decision, err)
+	}
+}
+
+func TestRouterDoesNotUseInstalledAppsForUserinfoURLs(t *testing.T) {
+	router := mustInstalledRouter(t, nil)
+	decision, err := router.Evaluate("https://user:secret@example.test/")
+	if err != nil || decision.InstalledApp != nil || decision.Source != "configured-default" {
+		t.Fatalf("Evaluate() = %#v, err=%v; want configured default without app match", decision, err)
+	}
+}
+
+func mustInstalledRouter(t *testing.T, rules []Rule) *Router {
+	t.Helper()
 	app, err := installedwebapp.NewEntry("chatgpt", "https://chatgpt.com/", "https://chatgpt.com/", installedwebapp.NewLaunchPlan("chatgpt"))
 	if err != nil {
 		t.Fatal(err)
@@ -15,45 +50,9 @@ func TestRouterInstalledAppRunsAfterStaticRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	static := mustRule(t, "forced", ExactHost, "forced.example", "forced-browser")
-	router, err := NewRouter([]Rule{static}, "default-browser", catalog)
+	router, err := NewRouter(rules, "default-browser", catalog)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	staticDecision, err := router.Evaluate("https://forced.example/")
-	if err != nil || staticDecision.Source != "static-rule" || staticDecision.InstalledApp != nil {
-		t.Fatalf("static decision = %#v, err=%v", staticDecision, err)
-	}
-	defaultDecision, err := router.Evaluate("https://other.test/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if defaultDecision.InstalledApp != nil || defaultDecision.Source != "configured-default" {
-		t.Fatalf("unmatched decision = %#v", defaultDecision)
-	}
-
-	appDecision, err := router.Evaluate("https://chatgpt.com/share/1")
-	if err != nil || appDecision.InstalledApp == nil || appDecision.InstalledApp.ID != "chatgpt" {
-		t.Fatalf("installed decision = %#v, err=%v", appDecision, err)
-	}
-}
-
-func TestRouterDoesNotUseInstalledAppsForUserinfoURLs(t *testing.T) {
-	app, err := installedwebapp.NewEntry("app", "https://example.test/", "https://example.test/", installedwebapp.NewLaunchPlan("app"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	catalog, err := installedwebapp.NewCatalog([]installedwebapp.Entry{app})
-	if err != nil {
-		t.Fatal(err)
-	}
-	router, err := NewRouter(nil, "default", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	decision, err := router.Evaluate("https://user:secret@example.test/")
-	if err != nil || decision.InstalledApp != nil || decision.Source != "configured-default" {
-		t.Fatalf("Evaluate() = %#v, err=%v; want configured default without app match", decision, err)
-	}
+	return router
 }
