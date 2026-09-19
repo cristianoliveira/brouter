@@ -198,6 +198,9 @@ func normalizeScopePath(scope url.URL) (string, string, error) {
 	if !strings.HasPrefix(path, "/") {
 		return "", "", fmt.Errorf("scope path must be absolute")
 	}
+	if strings.Contains(path, "%") {
+		return "", "", fmt.Errorf("scope path contains unsupported percent encoding")
+	}
 	if strings.Contains(path, "//") || strings.Contains(path, "/./") || strings.Contains(path, "/../") || strings.HasSuffix(path, "/..") || strings.HasSuffix(path, "/.") {
 		return "", "", fmt.Errorf("scope path contains ambiguous dot or empty segments")
 	}

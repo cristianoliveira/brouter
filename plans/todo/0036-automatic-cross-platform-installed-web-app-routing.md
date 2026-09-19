@@ -1,7 +1,7 @@
 ---
 id: TASK-0036
 title: Automatic cross-platform installed web-app routing
-status: todo
+status: doing
 depends_on: []
 tags: [routing, web-app, cross-platform]
 ---
@@ -64,9 +64,12 @@ require explicit scope.
 - Match parsed URL components, never substrings: scheme, host, and effective
   port define same-origin; scope is a path boundary (`/work` does not match
   `/workspace`) with an explicit trailing-slash policy. Credentials are never
-  part of the origin or scope decision. Tests must cover userinfo/lookalike
-  inputs such as `good.example@evil.example`, ports, case, query/fragment,
-  encoded paths, and a host that merely contains the origin text.
+  part of the origin or scope decision. Percent-encoded scope metadata is
+  rejected as unsupported, while encoded request paths are treated literally
+  and tested against separator/dot adversaries. Tests must cover
+  userinfo/lookalike inputs such as `good.example@evil.example`, ports, case,
+  query/fragment, encoded paths, and a host that merely contains the origin
+  text.
 - A candidate is eligible only when origin and scope both match. The longest
   matching scope wins. Equal normalized scopes use a documented stable
   tie-break (stable app ID, then adapter-defined stable launcher identity),
@@ -124,11 +127,12 @@ left as a fixture-only placeholder.
 
 ## Catalog lifecycle and performance
 
-- Build a catalog service with a bounded cache that stores app metadata and
-  launcher fingerprints only, never URLs. Cache lifetime must cover repeated
-  events in the macOS handler and avoid a full metadata scan for every Linux
-  click; one-shot CLI behavior must use a bounded directory/metadata
-  fingerprint rather than trusting an indefinitely stale snapshot.
+- Build a catalog service with a bounded, process-local cache that stores app
+  metadata and launcher fingerprints only, never clicked URLs. Cache lifetime
+  must cover repeated events in the macOS handler and avoid a full metadata
+  scan for every Linux click; each one-shot CLI process starts cold and uses a
+  bounded directory/metadata fingerprint rather than trusting an indefinitely
+  stale snapshot.
 - Invalidate on relevant root/entry metadata changes, missing launchers, and
   browser install/uninstall changes. Refresh atomically so a partial scan
   cannot replace a valid catalog. Concurrent refreshes must not race or return
@@ -138,7 +142,10 @@ left as a fixture-only placeholder.
   cached discovery path must stay within a documented non-material budget
   (target: no more than 10% above baseline, with a 1 ms floor), and cold-scan
   cost must have a bounded, separately reported budget. A benchmark failure is
-  visible rather than silently disabling discovery.
+  visible rather than silently disabling discovery. Initial host evidence
+  (20 one-shot `explain` runs, no launch) is recorded during implementation;
+  if discovery exceeds the target, keep TASK-0036 `doing` and report the
+  regression instead of claiming completion.
 
 ## Acceptance criteria
 
@@ -150,7 +157,8 @@ left as a fixture-only placeholder.
       tested as described above; command failures still stop the open.
 - [ ] Same-origin and scope matching has deterministic longest-scope and
       equal-scope tie behavior, with credential/lookalike/port/path boundary
-      tests.
+      tests, including rejected encoded scope metadata and adversarial encoded
+      request paths.
 - [ ] A shared catalog/launcher contract has contract tests, and real-shaped
       Brave/Chrome `.app` and `.desktop` fixtures exercise both macOS and Linux
       adapters at initial completion. Fixtures prove missing authoritative
@@ -174,6 +182,13 @@ left as a fixture-only placeholder.
       engines, and default-handler changes.
 
 ## Verification
+
+Current implementation evidence on the development host (macOS, 20 one-shot
+`explain` runs against the same temporary config and URL, no browser launch):
+`origin/main` median 5.177 ms / p95 10.752 ms; installed-app discovery median
+7.679 ms / p95 8.373 ms. This is a 2.502 ms median increase (48.3%) and is
+above the 10% target, so this plan remains `doing`; the result is visible and
+must not be described as a completed performance gate.
 
 Run focused domain, catalog, adapter, cache, and CLI tests first. Run the
 shared contract suite against both adapters, then platform fixture integration

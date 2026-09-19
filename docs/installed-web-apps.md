@@ -25,6 +25,8 @@ effective port must match exactly. Scope uses path-segment boundaries, so
 `/work` does not match `/workspace`; the longest scope wins. Equal scopes use
 stable app ID and launcher identity ordering. Credentials, malformed URLs,
 non-HTTP(S) URLs, and ambiguous metadata are not used to select an app.
+Percent-encoded scope paths are rejected as unsupported; encoded request paths
+remain literal path data and cannot cross a scope boundary.
 
 The clicked URL is passed as one structured argument. No manifest is fetched,
 network request is made, or full URL is written to the routing log or cache.
@@ -61,7 +63,9 @@ stable hash, never its path, origin, or display name.
 Discovery metadata is treated as user-writable untrusted input. Scans are
 bounded, cache snapshots are invalidated by metadata changes, launch identity
 is checked again before spawning, and all process execution bypasses shells.
-The cache is process-local and is not persisted. A same-user attacker can
+The cache is process-local and is not persisted; each one-shot CLI process
+starts with an empty catalog and fingerprints its configured discovery roots.
+A same-user attacker can
 still race a file between the final check and OS launch; exact paths,
 canonical executable checks, fingerprints, and trusted roots bound that risk
 but cannot eliminate filesystem TOCTOU.

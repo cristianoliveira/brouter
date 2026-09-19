@@ -19,6 +19,7 @@ func TestCatalogMatchesSameOriginAndScope(t *testing.T) {
 		{name: "longest scope", url: "https://chatgpt.com/settings/profile", want: "chatgpt-settings"},
 		{name: "scope exact path", url: "https://chatgpt.com/settings", want: "chatgpt-settings"},
 		{name: "encoded separator", url: "https://chatgpt.com/settings%2Fprofile", want: "chatgpt"},
+		{name: "encoded dot", url: "https://chatgpt.com/settings%2e%2e/private", want: "chatgpt"},
 		{name: "scope boundary", url: "https://chatgpt.com/settings-other", want: "chatgpt"},
 		{name: "lookalike host", url: "https://chatgpt.com.evil.test/", want: ""},
 		{name: "scheme", url: "http://chatgpt.com/", want: ""},
@@ -83,6 +84,7 @@ func TestEntryRejectsMalformedOrUntrustedMetadata(t *testing.T) {
 		{name: "origin credentials", origin: "https://u:p@example.test/", scope: "https://example.test/"},
 		{name: "scope other origin", origin: "https://example.test/", scope: "https://evil.test/"},
 		{name: "relative scope", origin: "https://example.test/", scope: "/app"},
+		{name: "encoded scope", origin: "https://example.test/", scope: "https://example.test/app%2Fprivate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := NewEntry("app", tc.origin, tc.scope, NewLaunchPlan("app")); err == nil {
