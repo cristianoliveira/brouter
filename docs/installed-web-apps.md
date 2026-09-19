@@ -28,6 +28,8 @@ non-HTTP(S) URLs, and ambiguous metadata are not used to select an app.
 
 The clicked URL is passed as one structured argument. No manifest is fetched,
 network request is made, or full URL is written to the routing log or cache.
+The opt-in routing log identifies an installed-app target with a short opaque
+stable hash, never its path, origin, or display name.
 
 ## Platform support and limitations
 

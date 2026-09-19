@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/cristianoliveira/brouter/internal/domain"
@@ -194,22 +194,8 @@ func launchInstalledApp(apps appDiscovery, cfg *config.Config, decision domain.D
 }
 
 func installedAppLogTarget(id string) string {
-	var b strings.Builder
-	b.WriteString("installed-web-app:")
-	for _, r := range id {
-		if safeInstalledAppIDRune(r) {
-			b.WriteRune(r)
-		}
-		if b.Len() >= 96 {
-			break
-		}
-	}
-	return b.String()
-}
-
-func safeInstalledAppIDRune(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-		(r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_'
+	digest := sha256.Sum256([]byte(id))
+	return fmt.Sprintf("installed-web-app:%x", digest[:6])
 }
 
 // launchTarget resolves and launches one already-validated target,

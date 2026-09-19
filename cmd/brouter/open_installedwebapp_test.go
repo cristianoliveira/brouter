@@ -125,6 +125,16 @@ command = ["/bin/sh", "-c", "printf '@default'"]
 	}
 }
 
+func TestInstalledAppLogTargetIsOpaque(t *testing.T) {
+	target := installedAppLogTarget("chatgpt.example.desktop / private path")
+	if target == "" || target == "installed-web-app:chatgpt.example.desktop" {
+		t.Fatalf("target = %q, want opaque stable identity", target)
+	}
+	if bytes.Contains([]byte(target), []byte("chatgpt")) || bytes.Contains([]byte(target), []byte("private")) {
+		t.Fatalf("target leaks app identity: %q", target)
+	}
+}
+
 func TestOpenFallsBackToConfiguredDefaultWhenNoAppMatches(t *testing.T) {
 	dir := t.TempDir()
 	browser, log := writeFakeBrowser(t, dir, 0)

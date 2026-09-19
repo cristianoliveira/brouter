@@ -18,13 +18,14 @@ func TestMacAdapterDiscoversAndSafelyLaunchesGeneratedApp(t *testing.T) {
 </dict></plist>`)
 
 	var gotName string
-	var gotArgs []string
+	var gotCalls [][]string
 	a := NewAdapter(Environment{
 		GOOS:     "darwin",
 		MacRoots: []string{root},
 		LookPath: func(name string) (string, error) { return "/usr/bin/" + name, nil },
 		Run: func(name string, args ...string) error {
-			gotName, gotArgs = name, append([]string(nil), args...)
+			gotName = name
+			gotCalls = append(gotCalls, append([]string(nil), args...))
 			return nil
 		},
 	})
@@ -37,11 +38,20 @@ func TestMacAdapterDiscoversAndSafelyLaunchesGeneratedApp(t *testing.T) {
 	if entry.ID != "com.google.Chrome.app.chatgpt" {
 		t.Fatalf("entry ID = %q", entry.ID)
 	}
-	if err := a.Launch(entry.Launch, "https://chatgpt.com/share/123"); err != nil {
-		t.Fatal(err)
+	for _, rawURL := range []string{"https://chatgpt.com/share/123", "https://chatgpt.com/share/456"} {
+		if err := a.Launch(entry.Launch, rawURL); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if gotName != "open" || strings.Join(gotArgs, "\x00") != "-b\x00com.google.Chrome.app.chatgpt\x00--args\x00https://chatgpt.com/share/123" {
-		t.Fatalf("launch = %s %q", gotName, gotArgs)
+	if gotName != "open" || len(gotCalls) != 2 {
+		t.Fatalf("launch = %s %q", gotName, gotCalls)
+	}
+	want := [][]string{
+		{"-b", "com.google.Chrome.app.chatgpt", "https://chatgpt.com/share/123"},
+		{"-b", "com.google.Chrome.app.chatgpt", "https://chatgpt.com/share/456"},
+	}
+	if strings.Join(gotCalls[0], "\x00") != strings.Join(want[0], "\x00") || strings.Join(gotCalls[1], "\x00") != strings.Join(want[1], "\x00") {
+		t.Fatalf("launch calls = %q, want %q", gotCalls, want)
 	}
 }
 
